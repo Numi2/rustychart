@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RustyChart</title>
+    <style>
+      body, html { margin: 0; padding: 0; background: #0b0f1a; color: #e5e7eb; }
+      main { min-height: 100vh; }
+    </style>
+    <script>
+      // Configure API endpoints at runtime if desired.
+      window.RUSTYCHART_API_BASE =
+        window.RUSTYCHART_API_BASE || "https://rustychart.fly.dev/api";
+      window.RUSTYCHART_WS_BASE =
+        window.RUSTYCHART_WS_BASE || "wss://rustychart.fly.dev/api/ws";
+
+      // The wasm bundle is built with Leptos's hydrate feature enabled,
+      // so it expects SSR hydration globals to exist. Provide empty
+      // defaults for the static build to prevent panic on startup.
+      window.__LEPTOS_PENDING_RESOURCES =
+        window.__LEPTOS_PENDING_RESOURCES || [];
+      window.__LEPTOS_LOCAL_ONLY = window.__LEPTOS_LOCAL_ONLY || [];
+      window.__LEPTOS_RESOLVED_RESOURCES =
+        window.__LEPTOS_RESOLVED_RESOURCES || {};
+    </script>
+  </head>
+  <body>
+    <div id="leptos"></div>
+    <script type="module">
+      import init, { start } from "./pkg/ui.js";
+
+      // Wait for DOM to be ready
+      const boot = () =>
+        init()
+          .then(() => {
+            start();
+          })
+          .catch((error) => {
+            console.error("Failed to initialize WASM:", error);
+            document.getElementById("leptos").innerHTML =
+              '<div style="padding: 2rem; text-align: center;">' +
+              "<h1>Failed to load application</h1>" +
+              "<p>Error: " + error.message + "</p>" +
+              "<p>Please check the browser console for details.</p>" +
+              "</div>";
+          });
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot);
+      } else {
+        boot();
+      }
+    </script>
+  </body>
+</html>

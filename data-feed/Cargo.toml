@@ -1,0 +1,13 @@
+[package]
+name = "data-feed"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ts-core = { path = "../ts-core" }
+futures-core = "0.3"
+serde = { version = "1", features = ["derive"] }
+

@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "ts-core",
+    "data-feed",
+    "ta-engine",
+    "chart-frontend",
+    "backend",
+    "app-shell",
+    "script-engine",
+    "ui", "gpu_param_sweep", "scan-engine", "regime-engine",
+]
+resolver = "2"
+
+[[workspace.metadata.leptos]]
+# Ensures cargo-leptos knows which crates to build for SSR and hydrate
+name = "rustychart"
+project = "rustychart"
+output-name = "rustychart"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+site-addr = "0.0.0.0:8080"
+reload-port = 3001
+bin-package = "backend"
+lib-package = "ui"
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+lto = "thin"
+

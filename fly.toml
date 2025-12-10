@@ -1,0 +1,18 @@
+app = "rustychart" # change to a globally-unique app name
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LEPTOS_SITE_ADDR = "0.0.0.0:8080"
+  LEPTOS_SITE_ROOT = "/app/site"
+  LEPTOS_OUTPUT_NAME = "rustychart"
+  RUST_LOG = "info"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = true
+  min_machines_running = 1

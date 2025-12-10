@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "framework": "vite",
+  "buildCommand": "./scripts/build-wasm.sh",
+  "outputDirectory": "dist"
+}

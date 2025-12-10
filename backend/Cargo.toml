@@ -1,0 +1,23 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ts-core = { path = "../ts-core" }
+data-feed = { path = "../data-feed" }
+axum = { version = "0.7", features = ["ws", "json"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+futures-util = "0.3"
+leptos = { version = "0.6", features = ["ssr"] }
+leptos_axum = { version = "0.6" }
+# Only pull in the server-side features; avoid hydrate/wasm features on backend.
+ui = { path = "../ui", default-features = false, features = ["ssr"] }
+tower-http = { version = "0.5", features = ["fs"] }
+app-shell = { path = "../app-shell" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+chrono = { version = "0.4", features = ["clock"] }
+

@@ -1,0 +1,12 @@
+target
+node_modules
+.git
+.gitignore
+.DS_Store
+*.log
+tmp
+dist
+build
+.cursor
+.idea
+.vscode

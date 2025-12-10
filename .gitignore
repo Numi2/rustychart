@@ -1,0 +1,35 @@
+.vercel
+.env
+.env.*.local
+
+# Dependencies
+node_modules
+**/node_modules
+
+# Build artifacts
+target/
+/target
+**/target
+debug/
+release/
+**/*.rlib
+**/*.rmeta
+**/*.dSYM
+**/*.pdb
+**/*.d
+dist
+build
+tmp
+pkg
+*.log
+*.tmp
+
+# Tooling / editors
+.cargo/
+.cursor/
+.idea/
+.vscode/
+
+# OS noise
+.DS_Store
+Thumbs.db

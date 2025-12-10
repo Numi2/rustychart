@@ -1,0 +1,10 @@
+ [package]
+ name = "regime-engine"
+ version = "0.1.0"
+ edition = "2021"
+
+ [dependencies]
+ serde = { version = "1", features = ["derive"] }
+ ts-core = { path = "../ts-core" }
+ thiserror = "1"
+ rand = "0.8"
