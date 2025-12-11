@@ -47,6 +47,7 @@ pub fn provide_app_ctx(api_base: String, ws_base: String) -> AppCtx {
                 orders: Vec::new(),
                 positions: Vec::new(),
                 alerts: Vec::new(),
+                price_scale_log: false,
                 price_pane_weight: 1.0,
                 pane_layout: Vec::new(),
                 pane: 0,

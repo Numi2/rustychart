@@ -297,6 +297,13 @@ impl AlphaVantageClient {
         {
             return Err(AlphaVantageError::ApiError(msg));
         }
+        if let Some(msg) = json
+            .get("Information")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+        {
+            return Err(AlphaVantageError::ApiError(msg));
+        }
         Ok(json)
     }
 }

@@ -108,11 +108,15 @@ fn default_price_weight() -> f32 {
     1.0
 }
 
+fn default_price_scale_log() -> bool {
+    false
+}
+
 fn default_pane_layout() -> Vec<PaneConfig> {
     Vec::new()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InputKind {
     Slider { min: f32, max: f32, step: f32 },
     Toggle,
@@ -129,13 +133,49 @@ impl Default for InputKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChartInput {
     pub id: String,
     pub label: String,
     pub value: String,
     #[serde(default)]
     pub kind: InputKind,
+}
+
+fn float_eq(a: f32, b: f32) -> bool {
+    let tol = 1e-5_f32;
+    (a - b).abs() <= tol * a.abs().max(b.abs()).max(1.0)
+}
+
+impl PartialEq for InputKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                InputKind::Slider {
+                    min: lmin,
+                    max: lmax,
+                    step: lstep,
+                },
+                InputKind::Slider {
+                    min: rmin,
+                    max: rmax,
+                    step: rstep,
+                },
+            ) => float_eq(*lmin, *rmin) && float_eq(*lmax, *rmax) && float_eq(*lstep, *rstep),
+            (InputKind::Toggle, InputKind::Toggle) => true,
+            (InputKind::Select { options: lo }, InputKind::Select { options: ro }) => lo == ro,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq for ChartInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.label == other.label
+            && self.value == other.value
+            && self.kind == other.kind
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +202,9 @@ pub struct ChartState {
     /// Relative height of the pane; interpreted as CSS fr units.
     #[serde(default = "default_pane_height")]
     pub height_ratio: f32,
+    /// Whether to render price on a logarithmic scale.
+    #[serde(default = "default_price_scale_log")]
+    pub price_scale_log: bool,
     /// Custom inputs bound to scripts/overlays.
     #[serde(default)]
     pub inputs: Vec<ChartInput>,
@@ -590,6 +633,7 @@ impl UiShell {
                     pane_layout: Vec::new(),
                     pane: 0,
                     height_ratio: 1.0,
+                    price_scale_log: false,
                     inputs: Vec::new(),
                 }],
             });
@@ -845,6 +889,7 @@ mod tests {
                     pane_layout: Vec::new(),
                     pane: 0,
                     height_ratio: 1.0,
+                    price_scale_log: false,
                     inputs: Vec::new(),
                 }],
             })

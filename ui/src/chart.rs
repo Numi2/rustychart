@@ -25,11 +25,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 #[cfg(target_arch = "wasm32")]
-type HandleSignal = RwSignal<Option<Rc<ChartHandle>>>;
-#[cfg(not(target_arch = "wasm32"))]
-type HandleSignal = ();
-
-#[cfg(target_arch = "wasm32")]
 fn apply_indicators(handle: &ChartHandle, indicators: &[ta_engine::IndicatorConfig]) {
     handle.clear_indicators();
     for cfg in indicators {
@@ -114,7 +109,7 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
     #[cfg(target_arch = "wasm32")]
     let handle = create_rw_signal::<Option<Rc<ChartHandle>>>(None);
     #[cfg(not(target_arch = "wasm32"))]
-    let _handle: HandleSignal = ();
+    let _handle: () = ();
     #[cfg(target_arch = "wasm32")]
     let last_cross = create_rw_signal::<Option<(i64, f64)>>(None);
     #[cfg(target_arch = "wasm32")]
@@ -168,6 +163,11 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                 apply_panes(&h, &chart_state);
                 apply_indicators(&h, &chart_state.indicators);
                 apply_drawings(&h, &chart_state.drawings);
+                let _ = h.set_scale(if chart_state.price_scale_log {
+                    "log"
+                } else {
+                    "linear"
+                });
                 let cb_bus_cross = bus_cross.clone();
                 let cb_bus_view = bus_view.clone();
                 let cb_link_group = link_group.clone();
@@ -288,6 +288,11 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                     set_timeframe.set(chart.timeframe.clone());
                     let _ = h.set_timeframe(&chart.timeframe);
                     h.set_symbol(&chart.symbol);
+                    let _ = h.set_scale(if chart.price_scale_log {
+                        "log"
+                    } else {
+                        "linear"
+                    });
                     apply_panes(&h, &chart);
                     apply_indicators(&h, &chart.indicators);
                     apply_drawings(&h, &chart.drawings);
@@ -370,9 +375,6 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
     let (indicator_pane, set_indicator_pane) = create_signal::<Option<u32>>(None);
     {
         let panes = pane_layout;
-        let indicator_output = indicator_output;
-        let indicator_pane = indicator_pane;
-        let set_indicator_pane = set_indicator_pane;
         create_effect(move |_| {
             if indicator_output.get() == OutputKind::SeparatePane && indicator_pane.get().is_none()
             {
@@ -384,9 +386,6 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
     let add_indicator = {
         #[cfg(target_arch = "wasm32")]
         let handle = handle.clone();
-        let pane_layout = pane_layout.clone();
-        let indicator_output = indicator_output;
-        let indicator_pane = indicator_pane;
         move |_| {
             let target_output = indicator_output.get();
             let target_pane = if target_output == OutputKind::SeparatePane {
@@ -511,7 +510,6 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
 
     let add_pane = {
         let store = app_ctx.store;
-        let set_indicator_pane = set_indicator_pane;
         move |_| {
             let mut new_id: Option<u32> = None;
             store.update(|s| {
@@ -525,7 +523,7 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                     let next_id = chart.pane_layout.iter().map(|p| p.id).max().unwrap_or(0) + 1;
                     chart.pane_layout.push(PaneConfig {
                         id: next_id,
-                        title: format!("Pane {}", next_id),
+                        title: format!("Pane {next_id}"),
                         weight: 1.0,
                     });
                     new_id = Some(next_id);
@@ -603,6 +601,42 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
     };
 
     let (scale_mode, set_scale_mode) = create_signal("Linear".to_string());
+    let show_tools = create_rw_signal(false);
+
+    {
+        let store = app_ctx.store;
+        create_effect(move |_| {
+            let mode = store.with(|s| {
+                s.state()
+                    .layouts
+                    .iter()
+                    .flat_map(|l| l.charts.iter())
+                    .find(|c| c.id == chart_id)
+                    .map(|c| if c.price_scale_log { "Log" } else { "Linear" }.to_string())
+            });
+            if let Some(m) = mode {
+                set_scale_mode.set(m);
+            }
+        });
+    }
+
+    // Keep chart scale in sync with UI state and handle recreation.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let handle = handle.clone();
+        let scale_mode = scale_mode.clone();
+        create_effect(move |_| {
+            if let Some(h) = handle.get() {
+                let mode = scale_mode.get();
+                let mode_str = if mode.to_ascii_lowercase().starts_with("log") {
+                    "log"
+                } else {
+                    "linear"
+                };
+                h.set_scale(mode_str);
+            }
+        });
+    }
 
     view! {
         <div class="chart-cell">
@@ -611,27 +645,42 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                     <span class="pill pill-strong">{move || symbol.get()}</span>
                     <span class="pill pill-soft">{move || timeframe.get()}</span>
                 </div>
-                <div class="chart-tools">
-                    <button class="btn ghost" aria-label="Undo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.undo(); } }>Undo</button>
-                    <button class="btn ghost" aria-label="Redo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.redo(); } }>Redo</button>
-                    <button class="btn ghost" aria-label="Add indicator" on:click=add_indicator>+Ind</button>
-                    <button class="btn ghost" aria-label="Add H-line" on:click=add_hline>H</button>
-                    <button class="btn ghost" aria-label="Add V-line" on:click=add_vline>V</button>
-                    <button class="btn ghost" aria-label="Toggle scale" on:click=move |_| {
-                        let next = if scale_mode.get() == "Linear" { "Log".to_string() } else { "Linear".to_string() };
-                        let mode = next.clone();
-                        set_scale_mode.set(next);
-                        #[cfg(target_arch = "wasm32")]
-                        if let Some(h) = handle.get() {
-                            h.set_scale(&mode);
+                <div class="chart-tools compact" on:mouseenter=move |_| show_tools.set(true) on:mouseleave=move |_| show_tools.set(false)>
+                    <button class="tool-trigger" aria-label="Chart tools" on:click=move |_| show_tools.update(|v| *v = !*v)>
+                        <span>Tools</span>
+                        <span class="caret">{move || if show_tools.get() { "▾" } else { "▸" }}</span>
+                    </button>
+                    {move || {
+                        if show_tools.get() {
+                            view! {
+                                <div class="tool-tray">
+                                    <button class="btn ghost micro" aria-label="Undo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.undo(); } }>Undo</button>
+                                    <button class="btn ghost micro" aria-label="Redo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.redo(); } }>Redo</button>
+                                    <button class="btn ghost micro" aria-label="Add indicator" on:click=add_indicator>+Ind</button>
+                                    <button class="btn ghost micro" aria-label="Add H-line" on:click=add_hline>H</button>
+                                    <button class="btn ghost micro" aria-label="Add V-line" on:click=add_vline>V</button>
+                                    <button class="btn ghost micro" aria-label="Toggle scale" on:click=move |_| {
+                                        let next = if scale_mode.get() == "Linear" { "Log".to_string() } else { "Linear".to_string() };
+                                        let make_log = next == "Log";
+                                        set_scale_mode.set(next.clone());
+                                        update_chart(&mut |chart| chart.price_scale_log = make_log);
+                                        #[cfg(target_arch = "wasm32")]
+                                        if let Some(h) = handle.get() {
+                                            h.set_scale(&next);
+                                        }
+                                    }>{move || format!("{} scale", scale_mode.get())}</button>
+                                </div>
+                            }.into_view()
+                        } else {
+                            ().into_view()
                         }
-                    }>{move || format!("{} scale", scale_mode.get())}</button>
+                    }}
                 </div>
                 <div class="chart-layout-controls">
                     <div class="pane-row">
                         <span class="label">{"Price height"}</span>
                         <input
-                            r#type="range"
+                            type="range"
                             min="0.2"
                             max="3.0"
                             step="0.1"
@@ -651,7 +700,7 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                                 <div class="pane-row">
                                     <span class="label">{pane.title.clone()}</span>
                                     <input
-                                        r#type="range"
+                                        type="range"
                                         min="0.2"
                                         max="3.0"
                                         step="0.1"
@@ -720,7 +769,7 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                                         <label class="input-row">
                                             <span>{input.label.clone()}</span>
                                             <input
-                                                r#type="range"
+                                                type="range"
                                                 min=move || min.to_string()
                                                 max=move || max.to_string()
                                                 step=move || step.to_string()
@@ -735,7 +784,7 @@ pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl Into
                                         <label class="input-row">
                                             <span>{input.label.clone()}</span>
                                             <input
-                                                r#type="checkbox"
+                                                type="checkbox"
                                                 checked=move || input.value == "true"
                                                 on:input=move |ev| {
                                                     let checked = event_target_checked(&ev);

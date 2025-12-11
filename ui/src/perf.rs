@@ -149,6 +149,7 @@ fn build_charts(s: &PerfScenario) -> Vec<ChartState> {
             pane_layout: Vec::new(),
             pane: 0,
             height_ratio: 1.0,
+            price_scale_log: false,
             inputs: Vec::new(),
         });
     }

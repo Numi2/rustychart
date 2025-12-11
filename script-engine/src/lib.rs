@@ -6,11 +6,11 @@ use ts_core::{Candle, TimeFrame};
 pub mod ai;
 pub mod assist;
 pub mod compat;
+pub mod docs;
 pub mod incremental;
 pub mod js_facade;
 pub mod language;
 pub mod manifest;
-pub mod docs;
 pub mod parser;
 pub mod remediation;
 pub mod sandbox;
@@ -25,13 +25,13 @@ pub use compat::{
     translate_pine, translate_thinkscript, CompatibilityIssue, CompatibilityReport, IssueSeverity,
     TranslationOutput, UnifiedIr,
 };
+pub use docs::{builtin_docs, BuiltinDoc};
 pub use incremental::{ExprSnapshot, IncrementalRunner, ScriptCheckpoint, SignalSnapshot};
 pub use js_facade::{validate_script, JsScriptHandle, ScriptArtifact};
 pub use language::SourceLang as ScriptSourceLang;
 pub use manifest::{
     InputKind, InputParam, Manifest, ManifestCapabilities, OutputKind, OutputSpec, Permission,
 };
-pub use docs::{builtin_docs, BuiltinDoc};
 pub use parser::{pine, think};
 pub use remediation::{suggest_fixes, FixSuggestion};
 pub use sandbox::{HostEnvironment, InstanceAdapter, SandboxLimits, SandboxedScript};
@@ -1231,12 +1231,7 @@ indicator("Empty")
         let src = r#"indicator("NoVersion")"#;
         let translation = compat::translate_pine(src);
         assert!(!translation.report.supported);
-        let codes: Vec<_> = translation
-            .report
-            .issues
-            .iter()
-            .map(|i| i.code)
-            .collect();
+        let codes: Vec<_> = translation.report.issues.iter().map(|i| i.code).collect();
         assert!(
             codes.contains(&crate::language::DiagnosticCode::MissingVersion),
             "expected MissingVersion code, got {codes:?}"
@@ -1250,12 +1245,7 @@ indicator("NoOutputs")
 "#;
         let translation = compat::translate_pine(src);
         assert!(!translation.report.supported);
-        let codes: Vec<_> = translation
-            .report
-            .issues
-            .iter()
-            .map(|i| i.code)
-            .collect();
+        let codes: Vec<_> = translation.report.issues.iter().map(|i| i.code).collect();
         assert!(
             codes.contains(&crate::language::DiagnosticCode::MissingPlotOrSignal),
             "expected MissingPlotOrSignal code, got {codes:?}"
@@ -1316,8 +1306,11 @@ plot(close)
             plots,
             signals: HashMap::new(),
         };
-        let mut runner =
-            incremental::IncrementalRunner::new(ScriptEngine::compile(TimeFrame::Minutes(1), spec, HashMap::new()));
+        let mut runner = incremental::IncrementalRunner::new(ScriptEngine::compile(
+            TimeFrame::Minutes(1),
+            spec,
+            HashMap::new(),
+        ));
         let candles: Vec<_> = (0..1024)
             .map(|i| sample_candle(i as i64 * 60_000, 100.0 + i as f64 * 0.01))
             .collect();

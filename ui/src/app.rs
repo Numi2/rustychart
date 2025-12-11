@@ -1,16 +1,27 @@
+#[cfg(target_arch = "wasm32")]
 use crate::{
     chart::ChartView,
     state::{provide_app_ctx, provide_link_bus},
     theme::GLOBAL_CSS,
 };
+#[cfg(target_arch = "wasm32")]
 use app_shell::{ChartInput, ChartState, InputKind, LayoutKind, Theme};
 use leptos::*;
+#[cfg(target_arch = "wasm32")]
 use leptos_meta::*;
-use script_engine::language::{DiagnosticCode, SourceLang as ScriptSourceLang, SourceSpan};
+#[cfg(target_arch = "wasm32")]
+use script_engine::language::{SourceLang as ScriptSourceLang, SourceSpan};
+#[cfg(target_arch = "wasm32")]
 use script_engine::{analyze_script, CompatibilityReport, CompletionItem, IssueSeverity, Template};
+#[cfg(target_arch = "wasm32")]
 use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "wasm32")]
 use serde_json::{self, json};
+#[cfg(target_arch = "wasm32")]
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
 use ta_engine::{IndicatorConfig, IndicatorKind, IndicatorParams, OutputKind, SourceField};
 
 #[cfg(target_arch = "wasm32")]
@@ -18,7 +29,7 @@ use app_shell::StateStore;
 #[cfg(target_arch = "wasm32")]
 use gloo_net::http::Request;
 #[cfg(target_arch = "wasm32")]
-use gloo_timers::future::TimeoutFuture;
+use gloo_timers::{callback::Interval, future::TimeoutFuture};
 #[cfg(target_arch = "wasm32")]
 use js_sys::{encode_uri_component, Reflect};
 #[cfg(target_arch = "wasm32")]
@@ -30,7 +41,7 @@ use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
 #[cfg(target_arch = "wasm32")]
-use web_sys::{window, Document, HtmlElement, KeyboardEvent};
+use web_sys::{window, HtmlElement, KeyboardEvent};
 
 #[cfg(target_arch = "wasm32")]
 fn read_global(key: &str) -> Option<String> {
@@ -39,6 +50,7 @@ fn read_global(key: &str) -> Option<String> {
         .and_then(|v| v.as_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 fn api_base_default() -> String {
     #[cfg(target_arch = "wasm32")]
     {
@@ -51,6 +63,7 @@ fn api_base_default() -> String {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn ws_base_default() -> String {
     #[cfg(target_arch = "wasm32")]
     {
@@ -63,6 +76,7 @@ fn ws_base_default() -> String {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug, Deserialize)]
 struct SearchHit {
     symbol: String,
@@ -70,6 +84,8 @@ struct SearchHit {
     exchange: Option<String>,
 }
 
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 struct ScanParams {
     ema_len: f32,
@@ -79,6 +95,8 @@ struct ScanParams {
     risk_per_trade: f32,
 }
 
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 struct ScanMetrics {
     params: ScanParams,
@@ -89,6 +107,7 @@ struct ScanMetrics {
     num_trades: u32,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug, Deserialize)]
 struct ScanResponse {
     metrics: Vec<ScanMetrics>,
@@ -96,6 +115,7 @@ struct ScanResponse {
     bars: usize,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ScriptEntry {
     name: String,
@@ -103,19 +123,23 @@ struct ScriptEntry {
     tag: String,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RunStatus {
     Idle,
     Running,
     Completed,
+    Failed,
 }
 
+#[cfg(target_arch = "wasm32")]
 impl RunStatus {
     fn label(&self) -> &'static str {
         match self {
             RunStatus::Idle => "Idle",
             RunStatus::Running => "Running",
             RunStatus::Completed => "Completed",
+            RunStatus::Failed => "Failed",
         }
     }
 
@@ -124,10 +148,12 @@ impl RunStatus {
             RunStatus::Idle => "status-muted",
             RunStatus::Running => "status-warn",
             RunStatus::Completed => "status-good",
+            RunStatus::Failed => "status-bad",
         }
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone)]
 struct RunSummary {
     id: String,
@@ -136,22 +162,16 @@ struct RunSummary {
     status: RunStatus,
 }
 
-#[derive(Clone)]
-struct StrategyEntry {
-    name: &'static str,
-    tag: &'static str,
-    body: &'static str,
-}
-
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, Debug, Default)]
 struct QuoteSnapshot {
     last: f64,
     change_pct: f64,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 struct ScriptAssistSnapshot {
-    lang: ScriptSourceLang,
     report: Option<CompatibilityReport>,
     artifact_json: Option<String>,
     manifest_json: Option<String>,
@@ -159,10 +179,10 @@ struct ScriptAssistSnapshot {
     templates: Vec<Template>,
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Default for ScriptAssistSnapshot {
     fn default() -> Self {
         Self {
-            lang: ScriptSourceLang::PineV5,
             report: None,
             artifact_json: None,
             manifest_json: None,
@@ -172,6 +192,7 @@ impl Default for ScriptAssistSnapshot {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn lang_label(lang: ScriptSourceLang) -> &'static str {
     match lang {
         ScriptSourceLang::PineV5 => "Pine v5",
@@ -180,6 +201,7 @@ fn lang_label(lang: ScriptSourceLang) -> &'static str {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn severity_class(sev: IssueSeverity) -> &'static str {
     match sev {
         IssueSeverity::Info => "pill-soft",
@@ -188,6 +210,7 @@ fn severity_class(sev: IssueSeverity) -> &'static str {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn format_span(span: Option<SourceSpan>) -> String {
     span.map(|s| {
         format!(
@@ -207,25 +230,10 @@ pub fn App() -> impl IntoView {
 #[cfg(target_arch = "wasm32")]
 #[component]
 pub fn App() -> impl IntoView {
-    provide_meta_context();
-
     let ctx = provide_app_ctx(api_base_default(), ws_base_default());
-    let _link_bus = provide_link_bus();
+    provide_link_bus();
 
     let run_history = create_rw_signal::<Vec<RunSummary>>(Vec::new());
-
-    let example_scripts: Vec<StrategyEntry> = vec![
-        StrategyEntry {
-            name: "Breakout momentum",
-            tag: "strategy",
-            body: "// Breakout momentum template\n",
-        },
-        StrategyEntry {
-            name: "RSI divergence",
-            tag: "indicator",
-            body: "// RSI divergence helper\n",
-        },
-    ];
 
     let default_my_scripts: Vec<ScriptEntry> = vec![
         ScriptEntry {
@@ -340,7 +348,8 @@ pub fn App() -> impl IntoView {
         let store = ctx.store;
         let active_chart_id = active_chart_id.clone();
         create_effect(move |_| {
-            let current = active_chart_id.get();
+            // Avoid borrowing `active_chart_id` while we mutate it in this effect.
+            let current = active_chart_id.get_untracked();
             let next = store.with(|s| {
                 let layouts = &s.state().layouts;
                 let active_layout = s
@@ -364,13 +373,15 @@ pub fn App() -> impl IntoView {
     let (dataset, set_dataset) = create_signal("Live".to_string());
     let (run_status, set_run_status) = create_signal(RunStatus::Idle);
     let (status_note, set_status_note) = create_signal("Idle".to_string());
+    #[cfg(target_arch = "wasm32")]
+    let (run_elapsed_ms, set_run_elapsed_ms) = create_signal(0_u64);
     let (selected_run, set_selected_run) = create_signal(
         run_history
             .with(|runs| runs.first().map(|r| r.id.clone()))
             .unwrap_or_else(|| "run-001".to_string()),
     );
     let (active_tab, set_active_tab) = create_signal("chart".to_string());
-    let (selected_strategy, set_selected_strategy) =
+    let (selected_strategy, _set_selected_strategy) =
         create_signal::<Option<String>>(my_scripts.with(|s| s.first().map(|e| e.name.clone())));
     let (script_body, set_script_body) = create_signal(
         my_scripts
@@ -381,10 +392,7 @@ pub fn App() -> impl IntoView {
     let (show_params_drawer, set_show_params_drawer) = create_signal(false);
     let (script_lang, set_script_lang) = create_signal(ScriptSourceLang::PineV5);
     let (assist_state, set_assist_state) =
-        create_signal::<ScriptAssistSnapshot>(ScriptAssistSnapshot {
-            lang: ScriptSourceLang::PineV5,
-            ..Default::default()
-        });
+        create_signal::<ScriptAssistSnapshot>(Default::default());
     let (share_blob, set_share_blob) = create_signal(String::new());
     let (share_input, set_share_input) = create_signal(String::new());
     let (date_range, set_date_range) = create_signal("90d".to_string());
@@ -396,33 +404,29 @@ pub fn App() -> impl IntoView {
     let (per_trade_cost, set_per_trade_cost) = create_signal(0.0_f32);
 
     // Parameter sweep controls (SMA, RSI, ATR) with toggles and explicit ranges.
-    let (sma_value, set_sma_value) = create_signal(20.0_f32);
-    let (sma_min, set_sma_min) = create_signal(10.0_f32);
-    let (sma_max, set_sma_max) = create_signal(60.0_f32);
-    let (sma_step, set_sma_step) = create_signal(5.0_f32);
-    let (sma_sweep, set_sma_sweep) = create_signal(true);
+    let (sma_value, _set_sma_value) = create_signal(20.0_f32);
+    let (sma_min, _set_sma_min) = create_signal(10.0_f32);
+    let (sma_max, _set_sma_max) = create_signal(60.0_f32);
+    let (sma_step, _set_sma_step) = create_signal(5.0_f32);
+    let (sma_sweep, _set_sma_sweep) = create_signal(true);
 
-    let (rsi_value, set_rsi_value) = create_signal(14.0_f32);
-    let (rsi_min, set_rsi_min) = create_signal(7.0_f32);
-    let (rsi_max, set_rsi_max) = create_signal(28.0_f32);
-    let (rsi_step, set_rsi_step) = create_signal(7.0_f32);
-    let (rsi_sweep, set_rsi_sweep) = create_signal(true);
+    let (rsi_value, _set_rsi_value) = create_signal(14.0_f32);
+    let (rsi_min, _set_rsi_min) = create_signal(7.0_f32);
+    let (rsi_max, _set_rsi_max) = create_signal(28.0_f32);
+    let (rsi_step, _set_rsi_step) = create_signal(7.0_f32);
+    let (rsi_sweep, _set_rsi_sweep) = create_signal(true);
 
-    let (atr_value, set_atr_value) = create_signal(2.0_f32);
-    let (atr_min, set_atr_min) = create_signal(1.0_f32);
-    let (atr_max, set_atr_max) = create_signal(4.0_f32);
-    let (atr_step, set_atr_step) = create_signal(0.5_f32);
-    let (atr_sweep, set_atr_sweep) = create_signal(false);
+    let (atr_value, _set_atr_value) = create_signal(2.0_f32);
+    let (atr_min, _set_atr_min) = create_signal(1.0_f32);
+    let (atr_max, _set_atr_max) = create_signal(4.0_f32);
+    let (atr_step, _set_atr_step) = create_signal(0.5_f32);
+    let (atr_sweep, _set_atr_sweep) = create_signal(false);
 
     // Sweep grid settings.
     let (sweep_steps, set_sweep_steps) = create_signal(10_u32);
-    let (ema_center, set_ema_center) = create_signal(50.0_f32);
-    let (band_center, set_band_center) = create_signal(2.0_f32);
-    let (atr_stop_center, set_atr_stop_center) = create_signal(1.0_f32);
-    let (atr_target_center, set_atr_target_center) = create_signal(2.0_f32);
 
     let sweep_combo_count = create_memo(move |_| {
-        let count = |on: bool, min: f32, max: f32, step: f32, val: f32| -> usize {
+        let count = |on: bool, min: f32, max: f32, step: f32| -> usize {
             if !on {
                 return 1;
             }
@@ -436,21 +440,18 @@ pub fn App() -> impl IntoView {
             sma_min.get(),
             sma_max.get(),
             sma_step.get(),
-            sma_value.get(),
         );
         let c2 = count(
             rsi_sweep.get(),
             rsi_min.get(),
             rsi_max.get(),
             rsi_step.get(),
-            rsi_value.get(),
         );
         let c3 = count(
             atr_sweep.get(),
             atr_min.get(),
             atr_max.get(),
             atr_step.get(),
-            atr_value.get(),
         );
         c1.saturating_mul(c2).saturating_mul(c3).max(1)
     });
@@ -460,62 +461,6 @@ pub fn App() -> impl IntoView {
     let (scan_error, set_scan_error) = create_signal::<Option<String>>(None);
     let scan_results = create_rw_signal::<Vec<ScanMetrics>>(Vec::new());
     let (focused_metrics, set_focused_metrics) = create_signal::<Option<ScanMetrics>>(None);
-
-    let add_script = {
-        let scripts = my_scripts;
-        let set_selected = set_selected_strategy;
-        let set_body = set_script_body;
-        move || {
-            let mut name_idx = 1;
-            let mut candidate = format!("New script {name_idx}");
-            scripts.with(|list| {
-                while list.iter().any(|s| s.name == candidate) {
-                    name_idx += 1;
-                    candidate = format!("New script {name_idx}");
-                }
-            });
-            let entry = ScriptEntry {
-                name: candidate.clone(),
-                tag: "strategy".into(),
-                body: "// New script\n".into(),
-            };
-            scripts.update(|list| {
-                list.insert(0, entry);
-                if list.len() > 50 {
-                    list.truncate(50);
-                }
-            });
-            set_selected.set(Some(candidate.clone()));
-            set_body.set("// New script\n".into());
-        }
-    };
-
-    let delete_script = {
-        let scripts = my_scripts;
-        let selected = selected_strategy;
-        let set_selected = set_selected_strategy;
-        let set_body = set_script_body;
-        move || {
-            if let Some(sel) = selected.get() {
-                scripts.update(|list| {
-                    if let Some(pos) = list.iter().position(|s| s.name == sel) {
-                        list.remove(pos);
-                    }
-                });
-                let next = scripts.with(|list| list.first().map(|e| e.name.clone()));
-                set_selected.set(next.clone());
-                if let Some(n) = next {
-                    if let Some(body) =
-                        scripts.with(|l| l.iter().find(|e| e.name == n).map(|e| e.body.clone()))
-                    {
-                        set_body.set(body);
-                    }
-                } else {
-                    set_body.set("// Script workspace\n".into());
-                }
-            }
-        }
-    };
 
     let apply_template = {
         let set_body = set_script_body;
@@ -607,11 +552,6 @@ pub fn App() -> impl IntoView {
         let risk_per_trade = risk_per_trade;
         let slippage_bps = slippage_bps;
         let per_trade_cost = per_trade_cost;
-        let sweep_steps = sweep_steps;
-        let ema_center = ema_center;
-        let band_center = band_center;
-        let atr_stop_center = atr_stop_center;
-        let atr_target_center = atr_target_center;
         let run_history = run_history;
         let set_selected_run = set_selected_run;
 
@@ -631,7 +571,7 @@ pub fn App() -> impl IntoView {
             let dataset_val = dataset.get();
             if dataset_val == "Synthetic" {
                 scan_error.set(Some("Synthetic dataset unsupported for scan-grid".into()));
-                run_status.set(RunStatus::Idle);
+                run_status.set(RunStatus::Failed);
                 status_note.set("Select Live or Historical".into());
                 scan_loading.set(false);
                 return;
@@ -676,6 +616,7 @@ pub fn App() -> impl IntoView {
                 atr_max.get_untracked(),
                 atr_step.get_untracked(),
             );
+            let (stop_min, stop_max, stop_step) = (atr_min, atr_max, atr_step);
             let (target_min, target_max, target_step) = (atr_min, atr_max, atr_step);
             let (risk_min, risk_max, risk_step) = range_for(
                 false,
@@ -801,20 +742,20 @@ pub fn App() -> impl IntoView {
                         }
                         Err(e) => {
                             scan_error.set(Some(format!("Parse error: {e}")));
-                            run_status.set(RunStatus::Idle);
+                            run_status.set(RunStatus::Failed);
                             status_note.set("Scan failed".to_string());
                             scan_results.set(Vec::new());
                         }
                     },
                     Ok(http) => {
                         scan_error.set(Some(format!("Scan failed: {}", http.status())));
-                        run_status.set(RunStatus::Idle);
+                        run_status.set(RunStatus::Failed);
                         status_note.set("Scan failed".to_string());
                         scan_results.set(Vec::new());
                     }
                     Err(e) => {
                         scan_error.set(Some(format!("Request error: {e}")));
-                        run_status.set(RunStatus::Idle);
+                        run_status.set(RunStatus::Failed);
                         status_note.set("Scan failed".to_string());
                         scan_results.set(Vec::new());
                     }
@@ -908,6 +849,24 @@ pub fn App() -> impl IntoView {
                 }
             }
         });
+
+        // Run elapsed timer for status pill.
+        {
+            let run_status = run_status;
+            let set_run_elapsed_ms = set_run_elapsed_ms;
+            create_effect(move |_| {
+                let status = run_status.get();
+                if status != RunStatus::Running {
+                    set_run_elapsed_ms.set(0);
+                    return;
+                }
+                set_run_elapsed_ms.set(0);
+                let tick = Interval::new(500, move || {
+                    set_run_elapsed_ms.update(|ms| *ms += 500);
+                });
+                on_cleanup(move || drop(tick));
+            });
+        }
     }
 
     {
@@ -918,10 +877,7 @@ pub fn App() -> impl IntoView {
             let body = body_signal.get();
             let lang = lang_signal.get();
             if body.trim().is_empty() {
-                set_assist.set(ScriptAssistSnapshot {
-                    lang,
-                    ..Default::default()
-                });
+                set_assist.set(Default::default());
                 return;
             }
             let analysis = analyze_script(&body, lang);
@@ -931,7 +887,6 @@ pub fn App() -> impl IntoView {
                 .and_then(|a| serde_json::to_string_pretty(a).ok());
             let manifest_json = serde_json::to_string_pretty(&analysis.manifest).ok();
             set_assist.set(ScriptAssistSnapshot {
-                lang,
                 report: Some(analysis.report),
                 artifact_json,
                 manifest_json,
@@ -1059,9 +1014,15 @@ pub fn App() -> impl IntoView {
                 let desired = rows.max(1).saturating_mul(cols.max(1));
                 let active_id = s.state().active_layout_id;
                 let layouts = &mut s.state_mut().layouts;
-                let layout = active_id
-                    .and_then(|id| layouts.iter_mut().find(|l| l.id == id))
-                    .or_else(|| layouts.first_mut());
+                let layout = if let Some(id) = active_id {
+                    if let Some(idx) = layouts.iter().position(|l| l.id == id) {
+                        layouts.get_mut(idx)
+                    } else {
+                        layouts.first_mut()
+                    }
+                } else {
+                    layouts.first_mut()
+                };
                 if let Some(layout) = layout {
                     let base = layout
                         .charts
@@ -1081,6 +1042,7 @@ pub fn App() -> impl IntoView {
                             pane_layout: Vec::new(),
                             pane: 0,
                             height_ratio: 1.0,
+                            price_scale_log: false,
                             inputs: Vec::new(),
                         });
                     let mut next_id = layout.charts.iter().map(|c| c.id).max().unwrap_or(0) + 1;
@@ -1143,9 +1105,15 @@ pub fn App() -> impl IntoView {
             store.update(|s| {
                 let active_id = s.state().active_layout_id;
                 let layouts = &mut s.state_mut().layouts;
-                let layout = active_id
-                    .and_then(|id| layouts.iter_mut().find(|l| l.id == id))
-                    .or_else(|| layouts.first_mut());
+                let layout = if let Some(id) = active_id {
+                    if let Some(idx) = layouts.iter().position(|l| l.id == id) {
+                        layouts.get_mut(idx)
+                    } else {
+                        layouts.first_mut()
+                    }
+                } else {
+                    layouts.first_mut()
+                };
                 if let Some(layout) = layout {
                     let next_id = layout.charts.iter().map(|c| c.id).max().unwrap_or(0) + 1;
                     let next_pane = layout
@@ -1173,6 +1141,7 @@ pub fn App() -> impl IntoView {
                             pane_layout: Vec::new(),
                             pane: next_pane,
                             height_ratio: 1.0,
+                            price_scale_log: false,
                             inputs: Vec::new(),
                         });
                     base.id = next_id;
@@ -1197,9 +1166,15 @@ pub fn App() -> impl IntoView {
                 let target = active_chart_id.get_untracked();
                 let active_id = s.state().active_layout_id;
                 let layouts = &mut s.state_mut().layouts;
-                let active_layout = active_id
-                    .and_then(|id| layouts.iter_mut().find(|l| l.id == id))
-                    .or_else(|| layouts.first_mut());
+                let active_layout = if let Some(id) = active_id {
+                    if let Some(idx) = layouts.iter().position(|l| l.id == id) {
+                        layouts.get_mut(idx)
+                    } else {
+                        layouts.first_mut()
+                    }
+                } else {
+                    layouts.first_mut()
+                };
                 if let Some(layout) = active_layout {
                     if let Some(tid) = target {
                         layout.charts.retain(|c| c.id != tid);
@@ -1226,6 +1201,7 @@ pub fn App() -> impl IntoView {
                             pane_layout: Vec::new(),
                             pane: 0,
                             height_ratio: 1.0,
+                            price_scale_log: false,
                             inputs: Vec::new(),
                         });
                     }
@@ -1235,22 +1211,13 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let set_theme_choice = {
-        let store = ctx.store;
-        move |theme: Theme| {
-            store.update(|s| {
-                s.state_mut().theme = theme.clone();
-            });
-        }
-    };
-
     // Indicator quick-add panel state.
-    let (ind_kind, set_ind_kind) = create_signal(IndicatorKind::Sma);
-    let (ind_period, set_ind_period) = create_signal(20usize);
-    let (ind_fast, set_ind_fast) = create_signal(12usize);
-    let (ind_slow, set_ind_slow) = create_signal(26usize);
-    let (ind_signal, set_ind_signal) = create_signal(9usize);
-    let (ind_stddev, set_ind_stddev) = create_signal(2.0_f64);
+    let (ind_kind, _set_ind_kind) = create_signal(IndicatorKind::Sma);
+    let (ind_period, _set_ind_period) = create_signal(20usize);
+    let (ind_fast, _set_ind_fast) = create_signal(12usize);
+    let (ind_slow, _set_ind_slow) = create_signal(26usize);
+    let (ind_signal, _set_ind_signal) = create_signal(9usize);
+    let (ind_stddev, _set_ind_stddev) = create_signal(2.0_f64);
 
     let add_indicator_to_active = move || {
         let kind = ind_kind.get();
@@ -1350,34 +1317,6 @@ pub fn App() -> impl IntoView {
         };
 
         update_active_chart(&mut |chart| chart.indicators.push(cfg.clone()));
-    };
-
-    let remove_indicator_from_active = {
-        move |idx: usize| {
-            update_active_chart(&mut |chart| {
-                if idx < chart.indicators.len() {
-                    chart.indicators.remove(idx);
-                }
-            });
-        }
-    };
-
-    let clear_indicators = move |_| {
-        update_active_chart(&mut |chart| chart.indicators.clear());
-    };
-
-    let move_indicator = {
-        move |idx: usize, dir: i32| {
-            update_active_chart(&mut |chart| {
-                let len = chart.indicators.len();
-                if idx < len {
-                    let next_idx = (idx as i32 + dir).clamp(0, len as i32 - 1) as usize;
-                    if next_idx != idx {
-                        chart.indicators.swap(idx, next_idx);
-                    }
-                }
-            });
-        }
     };
 
     let add_input_to_active = {
@@ -1686,7 +1625,7 @@ pub fn App() -> impl IntoView {
                         </div>
                         <div class="topbar-controls">
                             <div class="control-stack">
-                                <label class="input-label" for="active-timeframe">Timeframe</label>
+                                <label class="input-label" for="active-timeframe">Interval</label>
                                 <select
                                     class="input-compact"
                                     id="active-timeframe"
@@ -1703,7 +1642,7 @@ pub fn App() -> impl IntoView {
                                 </select>
                             </div>
                             <div class="control-stack">
-                                <label class="input-label" for="dataset-select">Dataset</label>
+                                <label class="input-label" for="dataset-select">Source</label>
                                 <select
                                     class="input-compact"
                                     id="dataset-select"
@@ -1715,102 +1654,39 @@ pub fn App() -> impl IntoView {
                                     <option value="Historical">Historical</option>
                                 </select>
                             </div>
-                            <div class="control-stack">
-                                <label class="input-label" for="pane-select">Pane</label>
-                                <select
-                                    class="input-compact"
-                                    id="pane-select"
-                                    name="pane-select"
-                                    value=move || active_chart_id.get().map(|id| id.to_string()).unwrap_or_else(|| "0".into())
-                                    on:change=move |ev| {
-                                        if let Ok(val) = event_target_value(&ev).parse::<u32>() {
-                                            active_chart_id.set(Some(val));
-                                        }
-                                    }
-                                >
-                                    {move || {
-                                        ctx.store.with(|s| {
-                                            let lid = s
-                                                .state()
-                                                .active_layout_id
-                                                .or_else(|| s.state().layouts.first().map(|l| l.id));
-                                            let mut opts = Vec::new();
-                                            if let Some(layout_id) = lid {
-                                                if let Some(layout) =
-                                                    s.state().layouts.iter().find(|l| l.id == layout_id)
-                                                {
-                                                    let mut charts = layout.charts.clone();
-                                                    charts.sort_by_key(|c| (c.pane, c.id));
-                                                    opts = charts
-                                                        .into_iter()
-                                                        .map(|c| {
-                                                            let label = format!("Pane {} ({})", c.pane + 1, c.symbol);
-                                                            view! {
-                                                                <option value=c.id.to_string()>{label}</option>
-                                                            }
-                                                        })
-                                                        .collect::<Vec<_>>();
-                                                }
-                                            }
-                                            opts.into_iter().collect_view()
-                                        })
-                                    }}
-                                </select>
-                            </div>
-                            <div class="control-stack">
-                                <label class="input-label" for="pane-height">Pane height</label>
-                                <div class="input-wrap">
-                                    <input
-                                        id="pane-height"
-                                        name="pane-height"
-                                        class="input-compact"
-                                        type="range"
-                                        min="0.5"
-                                        max="4.0"
-                                        step="0.1"
-                                        value=move || {
-                                            ctx.store.with(|s| {
-                                                let target = active_chart_id.get();
-                                                let layouts = &s.state().layouts;
-                                                let active_layout = s
-                                                    .state()
-                                                    .active_layout_id
-                                                    .and_then(|id| layouts.iter().find(|l| l.id == id))
-                                                    .or_else(|| layouts.first());
-                                                active_layout
-                                                    .and_then(|layout| {
-                                                        if let Some(id) = target {
-                                                            layout
-                                                                .charts
-                                                                .iter()
-                                                                .find(|c| c.id == id)
-                                                                .map(|c| c.height_ratio)
-                                                        } else {
-                                                            layout.charts.first().map(|c| c.height_ratio)
-                                                        }
-                                                    })
-                                                    .unwrap_or(1.0)
-                                                    .to_string()
-                                            })
-                                        }
-                                        on:input=move |ev| {
-                                            if let Ok(val) = event_target_value(&ev).parse::<f32>() {
-                                                update_active_chart(&mut |chart| {
-                                                    chart.height_ratio = val.max(0.25);
-                                                });
-                                            }
-                                        }
-                                    />
-                                </div>
-                            </div>
                         </div>
                     </div>
                     <div class="topbar-actions">
+                        <button class="btn ghost" on:click=move |_| set_show_script_drawer.set(true)>Script</button>
+                        <div class="pill-row" style="gap:6px;">
+                            <button class="btn ghost" on:click=move |_| set_layout_single()>Single</button>
+                            <button class="btn ghost" on:click=move |_| set_layout_dual()>Dual</button>
+                            <button class="btn ghost" on:click=move |_| set_layout_quad()>Quad</button>
+                        </div>
                         <button id="run-backtest-btn" class="btn secondary" on:click=trigger_backtest>Run backtest</button>
                         <button id="run-sweep-btn" class="btn primary" on:click=trigger_sweep>Run sweep</button>
                         <div class=format!("status-pill {}", run_status.get().tone_class())>
-                            <span class="status-dot"></span>
+                            {move || {
+                                (run_status.get() == RunStatus::Running).then(|| view! { <span class="status-spinner" aria-hidden="true"></span> }.into_view())
+                                    .unwrap_or_else(|| view! { <span class="status-dot"></span> }.into_view())
+                            }}
                             <span>{run_status.get().label()}</span>
+                            {move || {
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let ms = run_elapsed_ms.get();
+                                    if run_status.get() == RunStatus::Running && ms > 0 {
+                                        let secs = ms as f64 / 1000.0;
+                                        view! { <span class="status-elapsed">{format!("{secs:.1}s")}</span> }.into_view()
+                                    } else {
+                                        ().into_view()
+                                    }
+                                }
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    ().into_view()
+                                }
+                            }}
                         </div>
                     </div>
                 </header>
@@ -1822,7 +1698,6 @@ pub fn App() -> impl IntoView {
                                 <div class="pill-row">
                                     <span class="pill pill-strong">{move || active_symbol.get()}</span>
                                     <span class="pill">{move || active_timeframe.get()}</span>
-                                    <span class="pill">{move || dataset.get()}</span>
                                     {move || {
                                         selected_strategy
                                             .get()
@@ -1830,9 +1705,13 @@ pub fn App() -> impl IntoView {
                                             .unwrap_or_else(|| ().into_view())
                                     }}
                                 </div>
-                                <div class="chart-meta-actions">
+                                <div class="chart-meta-actions" style="gap:10px; flex-wrap:wrap;">
+                                    <div class="pill-row" style="gap:6px;">
+                                        <button class="btn ghost" on:click=move |_| add_pane()>Duplicate pane</button>
+                                        <button class="btn ghost" on:click=move |_| remove_active_pane()>Close pane</button>
+                                    </div>
                                     <button class="btn ghost" on:click=move |_| set_show_script_drawer.set(true)>
-                                        Script editor
+                                        Script drawer
                                     </button>
                                     <button class="btn ghost" on:click=move |_| add_indicator_to_active()>Quick SMA</button>
                                 </div>
@@ -1880,8 +1759,10 @@ pub fn App() -> impl IntoView {
                                         _ => "",
                                     };
                                     let tab_id = tab.to_string();
+                                    let tab_id_for_click = tab_id.clone();
+                                    let is_active = active_tab.get() == tab_id;
                                     view! {
-                                        <button class=format!("pill selectable {}", if active_tab.get()==tab_id { "active" } else { "" }) on:click=move |_| set_active_tab.set(tab_id.clone())>
+                                        <button class=format!("pill selectable {}", if is_active { "active" } else { "" }) on:click=move |_| set_active_tab.set(tab_id_for_click.clone())>
                                             {label}
                                         </button>
                                     }
@@ -1947,7 +1828,7 @@ pub fn App() -> impl IntoView {
                                                     <div class="pane-subtitle">{move || format!("{} runs", sweep_combo_count.get())}</div>
                                                 </div>
                                                 {move || {
-                                                    let results = scan_results.get();
+                                                    let results = Rc::new(scan_results.get());
                                                     if results.is_empty() {
                                                         return view! { <div class="pane-empty">Run a sweep to populate the heatmap.</div> }.into_view();
                                                     }
@@ -1957,8 +1838,11 @@ pub fn App() -> impl IntoView {
                                                     ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                                                     xs.dedup_by(|a, b| (*a - *b).abs() < f32::EPSILON);
                                                     ys.dedup_by(|a, b| (*a - *b).abs() < f32::EPSILON);
+                                                    let xs_vals = xs;
+                                                    let ys_vals = ys;
                                                     let best_pf = results.iter().map(|m| m.profit_factor).fold(0.0_f32, f32::max);
                                                     let worst_pf = results.iter().map(|m| m.profit_factor).fold(0.0_f32, f32::min);
+                                                    let cols = xs_vals.len();
                                                     let color_for = |pf: f32, best: f32, worst: f32| {
                                                         let hi = if best <= 0.0 { 1.0 } else { best };
                                                         let lo = worst.min(0.0);
@@ -1975,12 +1859,18 @@ pub fn App() -> impl IntoView {
                                                                 <span class="pill pill-soft">Rows: SMA length</span>
                                                                 <span class="pill pill-soft">Cols: RSI length</span>
                                                             </div>
-                                                            <div class="heatmap-body" style=format!("grid-template-columns: repeat({}, minmax(0, 1fr));", xs.len())>
-                                                                {ys.iter().flat_map(|y| {
-                                                                    let row_val = *y;
-                                                                    xs.iter().map(move |x| {
-                                                                        let col_val = *x;
-                                                                        let cell = results.iter().find(|m| (m.params.ema_len - col_val).abs() < 0.0001 && (m.params.band_width - row_val).abs() < 0.0001);
+                                                            <div class="heatmap-body" style=format!("grid-template-columns: repeat({}, minmax(0, 1fr));", cols)>
+                                                                {let results = results.clone();
+                                                                let xs_vals = xs_vals.clone();
+                                                                let ys_vals = ys_vals.clone();
+                                                                ys_vals.clone().into_iter().flat_map(move |row_val| {
+                                                                    let results = results.clone();
+                                                                    let xs_inner = xs_vals.clone();
+                                                                    xs_inner.into_iter().map(move |col_val| {
+                                                                        let cell = results.iter().find(|m| {
+                                                                            (m.params.ema_len - col_val).abs() < 0.0001
+                                                                                && (m.params.band_width - row_val).abs() < 0.0001
+                                                                        });
                                                                         if let Some(m) = cell {
                                                                             let m = m.clone();
                                                                             let color = color_for(m.profit_factor, best_pf, worst_pf);
@@ -2123,7 +2013,7 @@ pub fn App() -> impl IntoView {
                                     id="watchlist-add"
                                     name="watchlist-add"
                                     type="text"
-                                    placeholder="Add symbol"
+                                    placeholder="Add symbol (Enter to add)"
                                     value=move || new_watch.get()
                                     on:input=move |ev| set_new_watch.set(event_target_value(&ev))
                                     on:keydown=move |ev| {
@@ -2136,138 +2026,36 @@ pub fn App() -> impl IntoView {
                                         }
                                     }
                                 />
-                                <button class="btn ghost" on:click=move |_| {
-                                    let v = new_watch.get().trim().to_string();
-                                    if !v.is_empty() {
-                                        set_watchlist.update(|list| list.push(v.clone()));
-                                        set_new_watch.set(String::new());
-                                    }
-                                }>Add</button>
                             </div>
                         </div>
 
-                        <div class="sidebar-section">
+                        <div class="sidebar-section" style="display:none;">
                             <div class="section-head">
-                                <div class="section-title">Strategies</div>
-                                <div class="section-subtitle">Scripts / Examples</div>
+                                <div class="section-title">Recent runs</div>
+                                <div class="section-subtitle">Backtests / sweeps</div>
                             </div>
-                            <div class="pill-row" style="margin-bottom:6px;">
-                                <button class="btn ghost" on:click=move |_| add_script()>New</button>
-                                <button class="btn ghost" on:click=move |_| delete_script()>Delete</button>
-                            </div>
-                            <div class="section-subtitle muted">My Scripts</div>
-                            <div class="pill-grid">
-                                {my_scripts.get().into_iter().map(|s| {
-                                    let name = s.name.to_string();
-                                    let body = s.body.to_string();
-                                    let tag = s.tag.to_string();
-                                    let name_for_click = name.clone();
+                            <div class="list-stack">
+                                {run_history.get().into_iter().map(|r| {
+                                    let rid = r.id.to_string();
+                                    let status_class = r.status.tone_class();
+                                    let rid_for_click = rid.clone();
                                     view! {
-                                        <button class="pill-card" on:click=move |_| {
-                                            set_selected_strategy.set(Some(name_for_click.clone()));
-                                            set_script_body.set(body.clone());
-                                            set_show_script_drawer.set(true);
-                                        }>
-                                            <div class="pill-card-title">{name.clone()}</div>
-                                            <div class="pill-card-sub">{tag}</div>
-                                        </button>
-                                    }
-                                }).collect_view()}
-                            </div>
-                            <div class="section-subtitle muted" style="margin-top:8px;">Examples</div>
-                            <div class="pill-grid">
-                                {example_scripts.iter().map(|s| {
-                                    let name = s.name.to_string();
-                                    let body = s.body.to_string();
-                                    let name_for_click = name.clone();
-                                    view! {
-                                        <button class="pill-card" on:click=move |_| {
-                                            set_selected_strategy.set(Some(name_for_click.clone()));
-                                            set_script_body.set(body.clone());
-                                            set_show_script_drawer.set(true);
-                                        }>
-                                            <div class="pill-card-title">{name.clone()}</div>
-                                            <div class="pill-card-sub">{s.tag}</div>
+                                        <button class=format!("list-row {}", if selected_run.get()==rid { "active-row" } else { "" }) on:click=move |_| set_selected_run.set(rid_for_click.clone())>
+                                            <div class="list-left">
+                                                <span class="list-title">{r.title}</span>
+                                                <span class="list-sub">{r.id}</span>
+                                            </div>
+                                            <div class="list-right">
+                                                <span class=format!("pill {}", status_class)>{r.status.label()}</span>
+                                                <span class="pill pill-soft">{format!("PF {:.2}", r.pf)}</span>
+                                            </div>
                                         </button>
                                     }
                                 }).collect_view()}
                             </div>
                         </div>
 
-                <div class="sidebar-section">
-                    <div class="section-head">
-                        <div class="section-title">Layouts & theme</div>
-                        <div class="section-subtitle">Multi-pane + styling</div>
-                    </div>
-                    <div class="pill-row" style="margin-bottom:6px;">
-                        <button class="btn ghost" on:click=move |_| set_layout_single()>Single</button>
-                        <button class="btn ghost" on:click=move |_| set_layout_dual()>2 panes</button>
-                        <button class="btn ghost" on:click=move |_| set_layout_quad()>4 panes</button>
-                    </div>
-                    <div class="pill-row" style="margin-bottom:6px;">
-                        <button class="btn ghost" on:click=move |_| add_pane()>Add pane</button>
-                        <button class="btn ghost" on:click=move |_| remove_active_pane()>Remove active</button>
-                    </div>
-                    <div class="pill-row">
-                        <button class="btn ghost" on:click=move |_| set_theme_choice(Theme::Dark)>Dark</button>
-                        <button class="btn ghost" on:click=move |_| set_theme_choice(Theme::Light)>Light</button>
-                    </div>
-                </div>
-
-                <div class="sidebar-section">
-                    <div class="section-head">
-                        <div class="section-title">Overlays</div>
-                        <div class="section-subtitle">Order + visibility</div>
-                    </div>
-                    <div class="pill-row" style="margin-bottom:8px;">
-                        <button class="btn ghost" on:click=move |_| add_indicator_to_active()>Add overlay</button>
-                        <button class="btn ghost" on:click=clear_indicators>Clear all</button>
-                    </div>
-                    <div class="list-stack">
-                        {move || {
-                            ctx.store.with(|s| {
-                                let layouts = &s.state().layouts;
-                                let active_layout = s
-                                    .state()
-                                    .active_layout_id
-                                    .and_then(|id| layouts.iter().find(|l| l.id == id))
-                                    .or_else(|| layouts.first());
-                                let mut items: Vec<View> = Vec::new();
-                                if let Some(layout) = active_layout {
-                                    let target = active_chart_id.get();
-                                    let chart = layout
-                                        .charts
-                                        .iter()
-                                        .find(|c| Some(c.id) == target)
-                                        .or_else(|| layout.charts.first());
-                                    if let Some(chart) = chart {
-                                        for (idx, cfg) in chart.indicators.iter().enumerate() {
-                                            let name = format!("{:?}", cfg.kind);
-                                            let idx_copy = idx;
-                                            let row: View = view! {
-                                                <div class="list-row">
-                                                    <div class="list-left">
-                                                        <span class="list-title">{name}</span>
-                                                        <span class="list-sub">{format!("{:?}", cfg.params)}</span>
-                                                    </div>
-                                                    <div class="list-right" style="gap:6px;">
-                                    <button class="btn ghost" on:click=move |_| move_indicator(idx_copy, -1)>Up</button>
-                                    <button class="btn ghost" on:click=move |_| move_indicator(idx_copy, 1)>Down</button>
-                                                        <button class="btn ghost" on:click=move |_| remove_indicator_from_active(idx_copy)>Remove</button>
-                                                    </div>
-                                                </div>
-                                            }.into_view();
-                                            items.push(row);
-                                        }
-                                    }
-                                }
-                                items.into_iter().collect_view()
-                            })
-                        }}
-                    </div>
-                </div>
-
-                <div class="sidebar-section">
+                <div class="sidebar-section" style="display:none;">
                     <div class="section-head">
                         <div class="section-title">Pane inputs</div>
                         <div class="section-subtitle">Custom sliders/toggles</div>
@@ -2517,9 +2305,12 @@ pub fn App() -> impl IntoView {
                                         .take(12)
                                         .map(|c| {
                                             let item = c.clone();
+                                            let item_for_click = item.clone();
+                                            let label = item.label.clone();
+                                            let detail = item.detail.clone();
                                             view! {
-                                                <button class="pill pill-soft" title={item.detail.clone()} on:click=move |_| apply_completion(item.clone())>
-                                                    {item.label.clone()}
+                                                <button class="pill pill-soft" title={detail} on:click=move |_| apply_completion(item_for_click.clone())>
+                                                    {label}
                                                 </button>
                                             }
                                         })
@@ -2590,9 +2381,12 @@ pub fn App() -> impl IntoView {
                                         .iter()
                                         .map(|t| {
                                             let tpl = t.clone();
+                                            let tpl_for_click = tpl.clone();
+                                            let name = tpl.name;
+                                            let desc = tpl.description;
                                             view! {
-                                                <button class="pill pill-soft" title={tpl.description} on:click=move |_| apply_template(tpl.clone())>
-                                                    {tpl.name}
+                                                <button class="pill pill-soft" title={desc} on:click=move |_| apply_template(tpl_for_click.clone())>
+                                                    {name}
                                                 </button>
                                             }
                                         })
@@ -2689,70 +2483,6 @@ pub fn App() -> impl IntoView {
                                 />
                             </div>
                             <div class="control-stack">
-                                <label class="input-label" for="ema-center">EMA len center</label>
-                                <input
-                                    class="input-compact"
-                                    id="ema-center"
-                                    name="ema-center"
-                                    type="number"
-                                    min="1"
-                                    value=move || ema_center.get().to_string()
-                                    on:input=move |ev| {
-                                        if let Ok(v) = event_target_value(&ev).parse::<f32>() {
-                                            set_ema_center.set(v.max(1.0));
-                                        }
-                                    }
-                                />
-                            </div>
-                            <div class="control-stack">
-                                <label class="input-label" for="band-center">Band width center</label>
-                                <input
-                                    class="input-compact"
-                                    id="band-center"
-                                    name="band-center"
-                                    type="number"
-                                    step="0.1"
-                                    value=move || band_center.get().to_string()
-                                    on:input=move |ev| {
-                                        if let Ok(v) = event_target_value(&ev).parse::<f32>() {
-                                            set_band_center.set(v.max(0.1));
-                                        }
-                                    }
-                                />
-                            </div>
-                            <div class="control-stack">
-                                <label class="input-label" for="stop-center">ATR stop mult</label>
-                                <input
-                                    class="input-compact"
-                                    id="stop-center"
-                                    name="stop-center"
-                                    type="number"
-                                    step="0.1"
-                                    value=move || atr_stop_center.get().to_string()
-                                    on:input=move |ev| {
-                                        if let Ok(v) = event_target_value(&ev).parse::<f32>() {
-                                            set_atr_stop_center.set(v.max(0.1));
-                                        }
-                                    }
-                                />
-                            </div>
-                            <div class="control-stack">
-                                <label class="input-label" for="target-center">ATR target mult</label>
-                                <input
-                                    class="input-compact"
-                                    id="target-center"
-                                    name="target-center"
-                                    type="number"
-                                    step="0.1"
-                                    value=move || atr_target_center.get().to_string()
-                                    on:input=move |ev| {
-                                        if let Ok(v) = event_target_value(&ev).parse::<f32>() {
-                                            set_atr_target_center.set(v.max(0.1));
-                                        }
-                                    }
-                                />
-                            </div>
-                            <div class="control-stack">
                                 <label class="input-label" for="slip-bps">Slippage (bps)</label>
                                 <input
                                     class="input-compact"
@@ -2796,10 +2526,12 @@ pub fn App() -> impl IntoView {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 trait CollectView {
     fn collect_view(self) -> View;
 }
 
+#[cfg(target_arch = "wasm32")]
 impl<I, V> CollectView for I
 where
     I: Iterator<Item = V>,

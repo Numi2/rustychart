@@ -146,6 +146,8 @@ input:focus, select:focus, textarea:focus {
 .status-warn { border-color: rgba(247, 200, 67, 0.4); color: var(--warning); }
 .status-bad { border-color: rgba(240, 99, 92, 0.4); color: var(--negative); }
 .status-muted { color: var(--text-muted); }
+.status-spinner { width: 10px; height: 10px; border: 2px solid rgba(92,176,255,0.4); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin 0.9s linear infinite; }
+.status-elapsed { color: var(--text-muted); }
 
 .lab-app { background: var(--bg); color: var(--text); min-height: 100vh; }
 .lab-shell { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4) var(--space-4) var(--space-5); }
@@ -279,6 +281,15 @@ input:focus, select:focus, textarea:focus {
 .btn.primary:hover { filter: brightness(1.05); }
 .btn.secondary { background: var(--bg-elev-2); border-color: var(--border); color: var(--text); font-weight: 600; }
 .btn.ghost { background: transparent; border-style: dashed; color: var(--text-dim); }
+.btn.micro { padding: 4px 8px; font-size: var(--font-size-xs); border-radius: 8px; }
+.chart-tools { position: relative; display: flex; align-items: center; gap: var(--space-2); }
+.chart-tools .tool-trigger { padding: 6px 8px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elev-1); color: var(--text-dim); cursor: pointer; }
+.chart-tools .tool-tray { display: flex; gap: var(--space-2); align-items: center; }
+.chart-tools.compact .tool-tray { display: none; }
+.chart-tools.compact:hover .tool-tray,
+.chart-tools.compact:focus-within .tool-tray { display: flex; }
+.chart-tools.compact .tool-trigger { display: inline-flex; align-items: center; gap: 6px; }
+.chart-tools.compact .tool-trigger .caret { font-size: 10px; color: var(--text-muted); }
 
 .pill { padding: 4px 10px; border-radius: var(--radius-pill); background: var(--surface-hover); border: 1px solid var(--border); font-size: var(--font-size-xs); color: var(--text-dim); display: inline-flex; gap: 6px; align-items: center; }
 .pill-soft { background: rgba(92, 176, 255, 0.08); border-color: rgba(92, 176, 255, 0.2); color: var(--text); }

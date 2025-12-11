@@ -8,7 +8,6 @@ use alpha_vantage_client::{
     OutputSize,
 };
 use app_shell::AppState;
-use dotenvy::dotenv;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{FromRef, Query, State};
 use axum::http::{
@@ -20,6 +19,7 @@ use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use data_feed::DataEvent;
+use dotenvy::dotenv;
 use futures_util::{SinkExt, StreamExt};
 use gpu_param_sweep::{BacktestMetrics, CostModel, GpuBacktester, GridConfig, Ohlc, ParamRange};
 use leptos::get_configuration;
@@ -370,11 +370,7 @@ async fn fetch_alpha_history(
     limit: usize,
 ) -> Result<Vec<Candle>, AlphaVantageError> {
     let mut candles = match tf {
-        TimeFrame::Days(1) => {
-            client
-                .get_time_series_daily_adjusted(symbol, outputsize)
-                .await?
-        }
+        TimeFrame::Days(1) => client.get_time_series_daily(symbol, outputsize).await?,
         _ => {
             let interval = timeframe_to_alpha_interval(tf)
                 .ok_or(AlphaVantageError::UnsupportedTimeFrame(tf))?;
@@ -1043,13 +1039,50 @@ async fn coinbase_market_data(
     }))
 }
 
-async fn grid_scan_handler(Json(req): Json<GridScanRequest>) -> impl IntoResponse {
+fn synthetic_history(tf: TimeFrame, limit: usize) -> Vec<Candle> {
+    let mut rng = StdRng::from_entropy();
+    let mut price: f64 = 100.0;
+    let step = tf.duration_ms();
+    let start = Utc::now().timestamp_millis() - (limit as i64 * step);
+
+    (0..limit)
+        .map(|idx| {
+            let ts = start + (idx as i64) * step;
+            let drift: f64 = rng.gen_range(-0.8f64..0.8f64);
+            let volatility: f64 = rng.gen_range(0.1f64..0.6f64);
+            let open = price;
+            price = (price * (1.0 + drift * 0.01)).max(0.1_f64);
+            let mid = (open + price) / 2.0;
+            let high = (mid + volatility).max(open).max(price);
+            let low = (mid - volatility)
+                .min(open)
+                .min(price)
+                .max(0.05_f64);
+            Candle {
+                ts,
+                timeframe: tf,
+                open,
+                high,
+                low,
+                close: price,
+                volume: rng.gen_range(10.0f64..500.0f64),
+            }
+        })
+        .collect()
+}
+
+async fn grid_scan_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<GridScanRequest>,
+) -> impl IntoResponse {
     let tf = req
         .tf
         .as_deref()
         .and_then(TimeFrame::from_str)
         .unwrap_or(TimeFrame::Minutes(5));
     let days = req.days.unwrap_or(60);
+    let approx_limit =
+        ((days as i64 * ts_core::DAY_MS) / tf.duration_ms()).clamp(200, 10_000) as usize;
 
     let ranges = req.ranges;
     let grid = match (
@@ -1106,16 +1139,32 @@ async fn grid_scan_handler(Json(req): Json<GridScanRequest>) -> impl IntoRespons
             .into_response();
     }
 
-    let mut candles = match fetch_yahoo_history(&req.symbol, tf, days).await {
-        Some(c) => c,
-        None => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"error": "failed to fetch history"})),
-            )
-                .into_response()
+    let provider = guess_market_provider_for_symbol(&req.symbol);
+    let mut candles = fetch_remote_history(&req.symbol, tf, approx_limit, provider)
+        .await
+        .unwrap_or_default();
+
+    if candles.is_empty() && tf == state.feed.base_tf {
+        let mut store = state.feed.store.lock().unwrap();
+        store.ensure_timeframe(tf);
+        let series = store.series(tf);
+        if !series.is_empty() {
+            candles = series
+                .as_slice()
+                .iter()
+                .rev()
+                .take(approx_limit)
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
         }
-    };
+    }
+
+    if candles.is_empty() {
+        candles = synthetic_history(tf, approx_limit);
+    }
     candles.sort_by_key(|c| c.ts);
 
     let ohlc: Vec<Ohlc> = candles

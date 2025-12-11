@@ -1409,24 +1409,14 @@ impl Chart {
         } else {
             let mut total_weight = self.price_weight.max(0.1);
             for pid in pane_ids.iter() {
-                total_weight += self
-                    .pane_weights
-                    .get(pid)
-                    .copied()
-                    .unwrap_or(1.0)
-                    .max(0.1);
+                total_weight += self.pane_weights.get(pid).copied().unwrap_or(1.0).max(0.1);
             }
             self.price_panel_top = 0.0;
             self.price_panel_height =
                 self.height * (self.price_weight.max(0.1) / total_weight.max(0.1));
             let mut cursor = self.price_panel_height;
             for pid in pane_ids.iter() {
-                let w = self
-                    .pane_weights
-                    .get(pid)
-                    .copied()
-                    .unwrap_or(1.0)
-                    .max(0.1);
+                let w = self.pane_weights.get(pid).copied().unwrap_or(1.0).max(0.1);
                 let h = self.height * (w / total_weight.max(0.1));
                 pane_layout.push((*pid, cursor, h));
                 cursor += h;
@@ -2142,6 +2132,51 @@ fn provider_for_symbol(symbol: &str, override_provider: Option<&str>) -> String 
     "alpha".to_string()
 }
 
+fn seed_price_for(symbol: &str) -> f64 {
+    let upper = symbol.to_ascii_uppercase();
+    if upper.contains("BTC") {
+        30_000.0
+    } else if upper.contains("ETH") {
+        2_000.0
+    } else if upper.contains("ES=") || upper.contains("SPY") {
+        4_500.0
+    } else {
+        100.0
+    }
+}
+
+fn fallback_history(tf: TimeFrame, days: u64, seed: f64) -> Vec<Candle> {
+    let step_ms = tf.duration_ms().max(1);
+    let day_ms = 86_400_000_i64;
+    let approx = ((days as i64 * day_ms) / step_ms).clamp(120, 1200) as usize;
+    let count = approx.max(120);
+    let now = Date::now() as i64;
+    let mut candles = Vec::with_capacity(count);
+    let mut price = seed.max(1.0);
+
+    for idx in (0..count).rev() {
+        let ts = now - step_ms * (count as i64 - idx as i64);
+        let drift = ((idx as f64) * 0.07).sin() * 0.9 + ((idx as f64) * 0.013).cos() * 0.6;
+        let trend = (idx as f64 / count as f64 - 0.5) * 0.4;
+        let open = price;
+        price = (price + drift + trend).max(0.5);
+        let close = price;
+        let high = open.max(close) + 0.6;
+        let low = open.min(close) - 0.6;
+        candles.push(Candle {
+            ts,
+            timeframe: tf,
+            open,
+            high,
+            low,
+            close,
+            volume: 1.0,
+        });
+    }
+
+    candles
+}
+
 fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
     {
         let mut inner = inner_rc.borrow_mut();
@@ -2163,6 +2198,25 @@ fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
             return;
         }
 
+        let mut history_loaded = false;
+        let push_fallback_history = |rc: &Rc<RefCell<ChartHandleInner>>| {
+            if !rc.borrow().feeds_live {
+                return;
+            }
+            let mut inner_mut = rc.borrow_mut();
+            if !inner_mut.feeds_live {
+                return;
+            }
+            let seed = seed_price_for(&symbol);
+            let candles = fallback_history(base_tf, 5, seed);
+            let ev = DataEvent::HistoryBatch {
+                timeframe: base_tf,
+                candles,
+                prepend: false,
+            };
+            inner_mut.chart.apply_data_event(ev);
+        };
+
         let provider_override = { rc.borrow().provider_override.clone() };
         let provider = provider_for_symbol(&symbol, provider_override.as_deref());
         let base_http = http_base.trim_end_matches('/');
@@ -2182,6 +2236,7 @@ fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
                 if let Ok(candles) = resp.json::<Vec<Candle>>().await {
                     let mut candles = candles;
                     candles.sort_by_key(|c| c.ts);
+                    let has_candles = !candles.is_empty();
                     let ev = DataEvent::HistoryBatch {
                         timeframe: base_tf,
                         candles,
@@ -2191,8 +2246,14 @@ fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
                     if !inner_mut.feeds_live {
                         return;
                     }
+                    if has_candles {
+                        history_loaded = true;
+                    }
                     inner_mut.chart.apply_data_event(ev);
                 }
+            }
+            if !history_loaded {
+                push_fallback_history(&rc);
             }
         } else {
             // History via existing market-data endpoint.
@@ -2235,6 +2296,7 @@ fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
 
                     candles.sort_by_key(|c| c.ts);
 
+                    let has_candles = !candles.is_empty();
                     let ev = DataEvent::HistoryBatch {
                         timeframe: base_tf,
                         candles,
@@ -2244,8 +2306,15 @@ fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
                     if !inner_mut.feeds_live {
                         return;
                     }
+                    if has_candles {
+                        history_loaded = true;
+                    }
                     inner_mut.chart.apply_data_event(ev);
                 }
+            }
+
+            if !history_loaded {
+                push_fallback_history(&rc);
             }
 
             // WebSocket for supported providers.
