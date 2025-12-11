@@ -8,6 +8,7 @@ members = [
     "app-shell",
     "script-engine",
     "ui", "gpu_param_sweep", "scan-engine", "regime-engine",
+    "alpha-vantage-client",
 ]
 resolver = "2"
 

@@ -4,11 +4,13 @@ use serde::{Deserialize, Serialize};
 use ts_core::{Candle, TimeFrame};
 
 pub mod ai;
+pub mod assist;
 pub mod compat;
 pub mod incremental;
 pub mod js_facade;
 pub mod language;
 pub mod manifest;
+pub mod docs;
 pub mod parser;
 pub mod remediation;
 pub mod sandbox;
@@ -18,6 +20,7 @@ pub mod wasm;
 use crate::language::SourceLang;
 
 pub use ai::{generate_script, AiPromptRequest, AiSuggestion};
+pub use assist::{analyze_script, CompletionItem, ScriptAnalysis};
 pub use compat::{
     translate_pine, translate_thinkscript, CompatibilityIssue, CompatibilityReport, IssueSeverity,
     TranslationOutput, UnifiedIr,
@@ -28,6 +31,7 @@ pub use language::SourceLang as ScriptSourceLang;
 pub use manifest::{
     InputKind, InputParam, Manifest, ManifestCapabilities, OutputKind, OutputSpec, Permission,
 };
+pub use docs::{builtin_docs, BuiltinDoc};
 pub use parser::{pine, think};
 pub use remediation::{suggest_fixes, FixSuggestion};
 pub use sandbox::{HostEnvironment, InstanceAdapter, SandboxLimits, SandboxedScript};
@@ -583,6 +587,8 @@ pub struct ScriptInstance {
     plots: Vec<CompiledPlot>,
     signals: HashMap<String, CompiledSignal>,
     source_lang: Option<SourceLang>,
+    plots_buf: HashMap<String, f64>,
+    trigger_buf: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -635,6 +641,8 @@ impl ScriptEngine {
             plots: ordered_plots,
             signals,
             source_lang,
+            plots_buf: HashMap::new(),
+            trigger_buf: Vec::new(),
         }
     }
 }
@@ -642,24 +650,27 @@ impl ScriptEngine {
 impl ScriptInstance {
     /// Process a new candle; returns current plot values and any signals fired on this bar.
     pub fn on_candle(&mut self, candle: &Candle) -> ScriptResult {
-        let mut current_plots = HashMap::new();
+        // Reuse buffers to reduce allocations across candles.
+        self.plots_buf.clear();
+        self.trigger_buf.clear();
+        self.plots_buf.reserve(self.plots.len());
+        self.trigger_buf.reserve(self.signals.len());
 
         // Evaluate plots in a deterministic, dependency-aware order.
         for plot in self.plots.iter_mut() {
-            let v = plot.expr.eval(candle, &current_plots, &self.inputs);
-            current_plots.insert(plot.name.clone(), v);
+            let v = plot.expr.eval(candle, &self.plots_buf, &self.inputs);
+            self.plots_buf.insert(plot.name.clone(), v);
         }
 
-        let mut triggered = Vec::new();
         for (name, sig) in self.signals.iter_mut() {
-            if sig.fire(candle, &current_plots, &self.inputs) {
-                triggered.push(name.clone());
+            if sig.fire(candle, &self.plots_buf, &self.inputs) {
+                self.trigger_buf.push(name.clone());
             }
         }
 
         ScriptResult {
-            plots: current_plots,
-            triggered_signals: triggered,
+            plots: self.plots_buf.clone(),
+            triggered_signals: self.trigger_buf.clone(),
         }
     }
 
@@ -1216,6 +1227,42 @@ indicator("Empty")
     }
 
     #[test]
+    fn pine_translation_reports_missing_version() {
+        let src = r#"indicator("NoVersion")"#;
+        let translation = compat::translate_pine(src);
+        assert!(!translation.report.supported);
+        let codes: Vec<_> = translation
+            .report
+            .issues
+            .iter()
+            .map(|i| i.code)
+            .collect();
+        assert!(
+            codes.contains(&crate::language::DiagnosticCode::MissingVersion),
+            "expected MissingVersion code, got {codes:?}"
+        );
+    }
+
+    #[test]
+    fn pine_translation_reports_missing_outputs() {
+        let src = r#"//@version=6
+indicator("NoOutputs")
+"#;
+        let translation = compat::translate_pine(src);
+        assert!(!translation.report.supported);
+        let codes: Vec<_> = translation
+            .report
+            .issues
+            .iter()
+            .map(|i| i.code)
+            .collect();
+        assert!(
+            codes.contains(&crate::language::DiagnosticCode::MissingPlotOrSignal),
+            "expected MissingPlotOrSignal code, got {codes:?}"
+        );
+    }
+
+    #[test]
     fn checkpoint_roundtrip_restores_progress() {
         let spec = ema_script("ema", 3);
         let mut runner = incremental::IncrementalRunner::new(ScriptEngine::compile(
@@ -1251,5 +1298,31 @@ plot(close)
         let wasm_artifact: crate::wasm::WasmArtifact =
             serde_json::from_str(&artifact.artifact_json).unwrap();
         assert_eq!(wasm_artifact.source_lang, language::SourceLang::PineV5);
+    }
+
+    #[test]
+    fn runner_handles_thousand_candles() {
+        let mut plots = HashMap::new();
+        plots.insert(
+            "ema".to_string(),
+            Expr::Ema {
+                period: 20,
+                src: Box::new(Expr::Src(Source::Price(PriceField::Close))),
+            },
+        );
+        let spec = ScriptSpec {
+            name: "ema-load".into(),
+            inputs: HashMap::new(),
+            plots,
+            signals: HashMap::new(),
+        };
+        let mut runner =
+            incremental::IncrementalRunner::new(ScriptEngine::compile(TimeFrame::Minutes(1), spec, HashMap::new()));
+        let candles: Vec<_> = (0..1024)
+            .map(|i| sample_candle(i as i64 * 60_000, 100.0 + i as f64 * 0.01))
+            .collect();
+        let results = runner.apply_delta(&candles);
+        assert_eq!(results.len(), 1024);
+        assert!(results.last().unwrap().plots.contains_key("ema"));
     }
 }

@@ -1,4 +1,7 @@
-use app_shell::{AlertState, AppState, ChartState, DrawingKind, DrawingState, LayoutKind, LayoutState, OrderState, Theme};
+use app_shell::{
+    AlertState, AppState, ChartState, DrawingKind, DrawingState, LayoutKind, LayoutState,
+    OrderState, Theme,
+};
 use ta_engine::{IndicatorConfig, IndicatorKind, IndicatorParams, OutputKind, SourceField};
 
 #[derive(Debug, Clone)]
@@ -142,6 +145,11 @@ fn build_charts(s: &PerfScenario) -> Vec<ChartState> {
             orders,
             positions: Vec::new(),
             alerts,
+            price_pane_weight: 1.0,
+            pane_layout: Vec::new(),
+            pane: 0,
+            height_ratio: 1.0,
+            inputs: Vec::new(),
         });
     }
     charts

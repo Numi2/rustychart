@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ts-core = { path = "../ts-core" }
-data-feed = { path = "../data-feed" }
+data-feed = { path = "../data-feed", default-features = false }
 ta-engine = { path = "../ta-engine" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

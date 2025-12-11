@@ -5,7 +5,7 @@ use futures::{
     FutureExt,
 };
 use gpu_param_sweep::{
-    BacktestMetrics, CostModel, GridConfig, GpuBacktester, Ohlc, ParamRange, SampledParams,
+    BacktestMetrics, CostModel, GpuBacktester, GridConfig, Ohlc, ParamRange, SampledParams,
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -96,7 +96,13 @@ pub trait ScanEngine: Send + Sync {
     async fn scan_streaming(
         &self,
         request: ScanRequest,
-    ) -> Result<(ScanStream, BoxFuture<'static, Result<ScanResult, ScanError>>), ScanError>;
+    ) -> Result<
+        (
+            ScanStream,
+            BoxFuture<'static, Result<ScanResult, ScanError>>,
+        ),
+        ScanError,
+    >;
 }
 
 /// WebGPU-backed implementation using the existing `gpu_param_sweep` crate,
@@ -319,7 +325,13 @@ impl ScanEngine for WebGpuScanEngine {
     async fn scan_streaming(
         &self,
         request: ScanRequest,
-    ) -> Result<(ScanStream, BoxFuture<'static, Result<ScanResult, ScanError>>), ScanError> {
+    ) -> Result<
+        (
+            ScanStream,
+            BoxFuture<'static, Result<ScanResult, ScanError>>,
+        ),
+        ScanError,
+    > {
         let (tx, rx) = unbounded();
         let engine = self.clone();
         let fut = async move {

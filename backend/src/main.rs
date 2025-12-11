@@ -3,23 +3,33 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use alpha_vantage_client::{
+    timeframe_to_alpha_interval, AlphaVantageClient, AlphaVantageConfig, AlphaVantageError,
+    OutputSize,
+};
 use app_shell::AppState;
+use dotenvy::dotenv;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{FromRef, Query, State};
-use axum::http::StatusCode;
+use axum::http::{
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
+    Method, StatusCode,
+};
 use axum::response::IntoResponse;
-use axum::routing::{get, get_service};
+use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use data_feed::DataEvent;
 use futures_util::{SinkExt, StreamExt};
+use gpu_param_sweep::{BacktestMetrics, CostModel, GpuBacktester, GridConfig, Ohlc, ParamRange};
 use leptos::get_configuration;
 use leptos_axum::{generate_route_list, LeptosRoutes};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::time::interval;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use ts_core::{Candle, SeriesStore, Tick, TimeFrame, Timestamp};
 
@@ -34,6 +44,7 @@ struct ServerState {
     feed: FeedState,
     leptos_options: leptos::LeptosOptions,
     layout_store: Arc<Mutex<Option<AppState>>>,
+    alpha: Option<AlphaVantageClient>,
 }
 
 impl FromRef<ServerState> for leptos::LeptosOptions {
@@ -50,6 +61,8 @@ struct HistoryParams {
     limit: Option<usize>,
     symbol: Option<String>,
     provider: Option<String>,
+    source: Option<String>,
+    outputsize: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -133,6 +146,57 @@ struct Quote {
     volume: Option<Vec<Option<u64>>>,
 }
 
+fn map_yahoo_candles(timestamps: &[i64], quote: &Quote, tf: TimeFrame) -> Vec<Candle> {
+    let mut candles = Vec::with_capacity(timestamps.len());
+    for (idx, ts) in timestamps.iter().enumerate() {
+        let (Some(open), Some(high), Some(low), Some(close)) = (
+            quote.open_value(idx),
+            quote.high_value(idx),
+            quote.low_value(idx),
+            quote.close_value(idx),
+        ) else {
+            continue;
+        };
+        if !(open.is_finite() && high.is_finite() && low.is_finite() && close.is_finite()) {
+            continue;
+        }
+        let ts_ms = tf.align_ts(ts.saturating_mul(1_000));
+        candles.push(Candle {
+            ts: ts_ms,
+            timeframe: tf,
+            open: round_two(open),
+            high: round_two(high),
+            low: round_two(low),
+            close: round_two(close),
+            volume: quote.volume_value(idx).unwrap_or(0) as f64,
+        });
+    }
+
+    candles.sort_by_key(|c| c.ts);
+    candles.dedup_by_key(|c| c.ts);
+    candles
+}
+
+fn to_param_range(min: f32, max: f32, step: f32) -> Option<ParamRange> {
+    if step <= 0.0 || max < min {
+        return None;
+    }
+    Some(ParamRange { min, max, step })
+}
+
+fn sample_count(range: &ParamRange) -> Option<u32> {
+    let span = (range.max - range.min) / range.step;
+    if span.is_nan() || span.is_infinite() || span < 0.0 {
+        return None;
+    }
+    let n = span.floor() as u32 + 1;
+    if n == 0 {
+        None
+    } else {
+        Some(n)
+    }
+}
+
 impl Quote {
     fn value_at(series: &Option<Vec<Option<f64>>>, idx: usize) -> Option<f64> {
         series.as_ref().and_then(|v| v.get(idx)).and_then(|v| *v)
@@ -184,13 +248,55 @@ impl MarketProvider {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HistoryProvider {
+    Alpha,
+    Yahoo,
+    Coinbase,
+}
+
+impl HistoryProvider {
+    fn from_str(value: Option<&str>) -> Self {
+        match value.map(|v| v.to_ascii_lowercase()) {
+            Some(v) if v == "alpha" || v == "alphavantage" || v == "av" => HistoryProvider::Alpha,
+            Some(v) if v == "coinbase" || v == "cb" => HistoryProvider::Coinbase,
+            _ => HistoryProvider::Yahoo,
+        }
+    }
+
+    fn as_market_provider(&self) -> Option<MarketProvider> {
+        match self {
+            HistoryProvider::Yahoo => Some(MarketProvider::Yahoo),
+            HistoryProvider::Coinbase => Some(MarketProvider::Coinbase),
+            HistoryProvider::Alpha => None,
+        }
+    }
+}
+
+fn guess_market_provider_for_symbol(symbol: &str) -> MarketProvider {
+    let upper = symbol.to_ascii_uppercase();
+    if upper.contains('-')
+        || upper.ends_with("USD")
+        || upper.ends_with("USDT")
+        || upper.ends_with("USDC")
+    {
+        MarketProvider::Coinbase
+    } else {
+        MarketProvider::Yahoo
+    }
+}
+
 fn normalize_coinbase_symbol(symbol: &str) -> String {
     if symbol.contains('-') {
         return symbol.to_ascii_uppercase();
     }
     if symbol.len() > 3 {
         let (base, quote) = symbol.split_at(symbol.len() - 3);
-        format!("{}-{}", base.to_ascii_uppercase(), quote.to_ascii_uppercase())
+        format!(
+            "{}-{}",
+            base.to_ascii_uppercase(),
+            quote.to_ascii_uppercase()
+        )
     } else {
         symbol.to_ascii_uppercase()
     }
@@ -255,11 +361,41 @@ fn map_coinbase_candles(mut candles: Vec<[f64; 6]>) -> Vec<OhlcvBar> {
     data
 }
 
-async fn fetch_coinbase_history(
+async fn fetch_alpha_history(
+    client: &AlphaVantageClient,
     symbol: &str,
     tf: TimeFrame,
+    outputsize: OutputSize,
+    from: Option<Timestamp>,
     limit: usize,
-) -> Option<Vec<Candle>> {
+) -> Result<Vec<Candle>, AlphaVantageError> {
+    let mut candles = match tf {
+        TimeFrame::Days(1) => {
+            client
+                .get_time_series_daily_adjusted(symbol, outputsize)
+                .await?
+        }
+        _ => {
+            let interval = timeframe_to_alpha_interval(tf)
+                .ok_or(AlphaVantageError::UnsupportedTimeFrame(tf))?;
+            client
+                .get_time_series_intraday(symbol, interval, outputsize)
+                .await?
+        }
+    };
+
+    if let Some(from_ts) = from {
+        candles.retain(|c| c.ts >= from_ts);
+    }
+    candles.sort_by_key(|c| c.ts);
+    if candles.len() > limit {
+        candles = candles.split_off(candles.len().saturating_sub(limit));
+    }
+
+    Ok(candles)
+}
+
+async fn fetch_coinbase_history(symbol: &str, tf: TimeFrame, limit: usize) -> Option<Vec<Candle>> {
     let product = normalize_coinbase_symbol(symbol);
     let granularity = coinbase_granularity(&tf.name())?;
     let base = env::var(COINBASE_API_URL_ENV)
@@ -294,11 +430,7 @@ async fn fetch_coinbase_history(
     Some(mapped)
 }
 
-async fn fetch_yahoo_history(
-    symbol: &str,
-    tf: TimeFrame,
-    days: u64,
-) -> Option<Vec<Candle>> {
+async fn fetch_yahoo_history(symbol: &str, tf: TimeFrame, days: u64) -> Option<Vec<Candle>> {
     let interval = tf.name();
     let symbol = symbol.to_string();
     let end_date = Utc::now().timestamp();
@@ -322,24 +454,7 @@ async fn fetch_yahoo_history(
         .and_then(|mut q| q.pop())
         .unwrap_or_default();
 
-    let mut candles = Vec::new();
-    for (idx, ts) in timestamps.iter().enumerate() {
-        let open = quote.open_value(idx)?;
-        let high = quote.high_value(idx)?;
-        let low = quote.low_value(idx)?;
-        let close = quote.close_value(idx)?;
-        let vol = quote.volume_value(idx).unwrap_or(0) as f64;
-        candles.push(Candle {
-            ts: ts * 1_000,
-            timeframe: tf,
-            open: round_two(open),
-            high: round_two(high),
-            low: round_two(low),
-            close: round_two(close),
-            volume: vol,
-        });
-    }
-    Some(candles)
+    Some(map_yahoo_candles(&timestamps, &quote, tf))
 }
 
 async fn fetch_remote_history(
@@ -349,7 +464,7 @@ async fn fetch_remote_history(
     provider: MarketProvider,
 ) -> Option<Vec<Candle>> {
     let mut candles = match provider {
-        MarketProvider::Yahoo => fetch_yahoo_history(symbol, tf, 30).await,
+        MarketProvider::Yahoo => fetch_yahoo_history(symbol, tf, 59).await,
         MarketProvider::Coinbase => fetch_coinbase_history(symbol, tf, limit).await,
     }?;
 
@@ -366,6 +481,42 @@ struct CoinbaseTicker {
     size: Option<String>,
     volume: Option<String>,
     time: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GridRanges {
+    ema_min: f32,
+    ema_step: f32,
+    ema_max: f32,
+    band_min: f32,
+    band_step: f32,
+    band_max: f32,
+    atr_stop_min: f32,
+    atr_stop_step: f32,
+    atr_stop_max: f32,
+    atr_target_min: f32,
+    atr_target_step: f32,
+    atr_target_max: f32,
+    risk_min: f32,
+    risk_step: f32,
+    risk_max: f32,
+}
+
+#[derive(Debug, Deserialize)]
+struct GridScanRequest {
+    symbol: String,
+    tf: Option<String>,
+    days: Option<u64>,
+    ranges: GridRanges,
+    per_trade_cost: Option<f32>,
+    slippage_bps: Option<f32>,
+}
+
+#[derive(Debug, Serialize)]
+struct GridScanResponse {
+    metrics: Vec<BacktestMetrics>,
+    combos: u32,
+    bars: usize,
 }
 
 async fn coinbase_ticker_tick(symbol: &str) -> Result<Option<Tick>, reqwest::Error> {
@@ -404,11 +555,19 @@ async fn coinbase_ticker_tick(symbol: &str) -> Result<Option<Tick>, reqwest::Err
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     let conf = get_configuration(None).await.expect("load leptos config");
     let leptos_options = conf.leptos_options;
 
     let base_tf = TimeFrame::Minutes(1);
     let store = SeriesStore::new(base_tf);
+
+    let alpha_client = env::var("ALPHAVANTAGE_API_KEY")
+        .ok()
+        .and_then(|key| AlphaVantageClient::new(AlphaVantageConfig::new(key)).ok());
+    if alpha_client.is_none() {
+        println!("Alpha Vantage API key not set; alpha provider disabled.");
+    }
 
     let feed_state = FeedState {
         store: Arc::new(Mutex::new(store)),
@@ -419,6 +578,7 @@ async fn main() {
         feed: feed_state.clone(),
         leptos_options: leptos_options.clone(),
         layout_store: Arc::new(Mutex::new(None)),
+        alpha: alpha_client.clone(),
     };
 
     let live_state = feed_state.clone();
@@ -432,14 +592,25 @@ async fn main() {
 
     let app = Router::new()
         .route("/api/history", get(history_handler))
+        .route("/api/alpha/history", get(history_handler))
         .route("/api/market-data", get(market_data_handler))
         .route("/api/search", get(search_handler))
+        .route("/api/alpha/symbol_search", get(alpha_symbol_search_handler))
+        .route("/api/scan-grid", post(grid_scan_handler))
         .route("/api/ws", get(ws_handler))
         .route("/api/layout", get(load_layout).post(save_layout))
+        .route("/api/layout/load", get(load_layout))
+        .route("/api/layout/save", post(save_layout))
         .leptos_routes(&server_state, leptos_routes, ui::App)
         .fallback_service(
             get_service(ServeDir::new(leptos_options.site_root.clone()))
                 .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        )
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_headers([ACCEPT, AUTHORIZATION, CONTENT_TYPE]),
         )
         .with_state(server_state.clone());
 
@@ -504,12 +675,63 @@ async fn history_handler(
         .unwrap_or_else(|| env::var(DEFAULT_SYMBOL_ENV).unwrap_or_else(|_| "BTCUSD".to_string()));
 
     let env_provider = env::var(DEFAULT_PROVIDER_ENV).ok();
-    let provider =
-        MarketProvider::from_str(params.provider.as_deref().or(env_provider.as_deref()));
+    let provider = HistoryProvider::from_str(
+        params
+            .provider
+            .as_deref()
+            .or(params.source.as_deref())
+            .or(env_provider.as_deref()),
+    );
+    let outputsize = match params.outputsize.as_deref() {
+        Some(v) if v.eq_ignore_ascii_case("full") => OutputSize::Full,
+        _ => OutputSize::Compact,
+    };
 
-    // Try remote history first, fallback to in-memory simulator store.
-    let mut candles =
-        fetch_remote_history(&symbol, tf, limit, provider).await.unwrap_or_default();
+    // Try provider-specific history first, fallback to in-memory simulator store.
+    let mut candles = match provider {
+        HistoryProvider::Alpha => {
+            if let Some(client) = state.alpha.clone() {
+                match fetch_alpha_history(&client, &symbol, tf, outputsize, params.from, limit)
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(AlphaVantageError::RateLimited) => {
+                        return (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            Json(json!({"error": "Alpha Vantage rate limited"})),
+                        )
+                            .into_response();
+                    }
+                    Err(AlphaVantageError::UnsupportedTimeFrame(_)) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"error": "Unsupported timeframe for Alpha Vantage"})),
+                        )
+                            .into_response();
+                    }
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            Json(json!({"error": format!("alpha history failed: {e}")})),
+                        )
+                            .into_response();
+                    }
+                }
+            } else {
+                // Gracefully fallback to a market provider when Alpha Vantage is not configured.
+                let fallback_provider = guess_market_provider_for_symbol(&symbol);
+                fetch_remote_history(&symbol, tf, limit, fallback_provider)
+                    .await
+                    .unwrap_or_default()
+            }
+        }
+        other => {
+            let fallback_provider = other.as_market_provider().unwrap_or(MarketProvider::Yahoo);
+            fetch_remote_history(&symbol, tf, limit, fallback_provider)
+                .await
+                .unwrap_or_default()
+        }
+    };
 
     // Cache into the in-memory store so subsequent requests (or derived TFs) are quick.
     if !candles.is_empty() && tf == state.feed.base_tf {
@@ -551,7 +773,7 @@ async fn history_handler(
         };
     }
 
-    Json(candles)
+    Json(candles).into_response()
 }
 
 /// Dispatches market data requests to Yahoo or Coinbase.
@@ -576,7 +798,7 @@ async fn search_handler(Query(params): Query<SearchParams>) -> impl IntoResponse
     if q.len() < 2 {
         return Json(Vec::<SearchHit>::new());
     }
-    let limit = params.limit.unwrap_or(8).max(1).min(20);
+    let limit = params.limit.unwrap_or(8).clamp(1, 20);
 
     let url = format!(
         "https://query2.finance.yahoo.com/v1/finance/search?q={q}&quotesCount={limit}&newsCount=0"
@@ -611,12 +833,49 @@ async fn search_handler(Query(params): Query<SearchParams>) -> impl IntoResponse
     Json(hits)
 }
 
-async fn yahoo_market_data(
-    symbol: Option<String>,
-    days: u64,
-    interval: String,
-) -> MarketResponse {
+async fn alpha_symbol_search_handler(
+    State(state): State<ServerState>,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    let q = params.q.unwrap_or_default().trim().to_string();
+    if q.len() < 2 {
+        return Json(Vec::<SearchHit>::new()).into_response();
+    }
+    let limit = params.limit.unwrap_or(8).clamp(1, 20);
+    let Some(client) = state.alpha.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "Alpha Vantage not configured"})),
+        )
+            .into_response();
+    };
+
+    match client.symbol_search(&q).await {
+        Ok(matches) => {
+            let hits = matches
+                .into_iter()
+                .take(limit)
+                .map(|m| SearchHit {
+                    symbol: m.symbol,
+                    name: m.name,
+                    exchange: m.region,
+                    quote_type: m.instrument_type,
+                    score: m.match_score.as_deref().and_then(|s| s.parse::<f64>().ok()),
+                })
+                .collect::<Vec<_>>();
+            Json(hits).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"error": format!("alpha search failed: {e}")})),
+        )
+            .into_response(),
+    }
+}
+
+async fn yahoo_market_data(symbol: Option<String>, days: u64, interval: String) -> MarketResponse {
     let symbol = symbol.unwrap_or_else(|| "ES=F".to_string());
+    let tf = TimeFrame::from_str(&interval).unwrap_or(TimeFrame::Minutes(5));
 
     let end_date = Utc::now().timestamp();
     let start_date = end_date - (days as i64) * 24 * 60 * 60;
@@ -673,34 +932,29 @@ async fn yahoo_market_data(
         .and_then(|mut q| q.pop())
         .unwrap_or_default();
 
-    let mut data: Vec<OhlcvBar> = Vec::with_capacity(timestamps.len());
+    let mut candles = map_yahoo_candles(&timestamps, &quote, tf);
+    if candles.len() > 1 {
+        // Trim to the requested window (most recent first).
+        let cutoff =
+            (Utc::now().timestamp_millis()).saturating_sub((days as i64) * 24 * 60 * 60 * 1000);
+        candles.retain(|c| c.ts >= cutoff);
+    }
 
-    for (idx, ts) in timestamps.iter().enumerate() {
-        let (Some(open), Some(high), Some(low), Some(close)) = (
-            quote.open_value(idx),
-            quote.high_value(idx),
-            quote.low_value(idx),
-            quote.close_value(idx),
-        ) else {
+    let mut data: Vec<OhlcvBar> = Vec::with_capacity(candles.len());
+    for c in &candles {
+        let ts_sec = c.ts / 1_000;
+        let Some(dt) = DateTime::<Utc>::from_timestamp(ts_sec, 0) else {
             continue;
         };
-
-        let Some(dt) = DateTime::<Utc>::from_timestamp(*ts, 0) else {
-            continue;
-        };
-
-        let date = dt.date_naive().format("%Y-%m-%d").to_string();
-        let time = dt.time().format("%H:%M").to_string();
-
         data.push(OhlcvBar {
-            ts: ts * 1_000,
-            date,
-            time,
-            open: round_two(open),
-            high: round_two(high),
-            low: round_two(low),
-            close: round_two(close),
-            volume: quote.volume_value(idx).unwrap_or(0),
+            ts: c.ts,
+            date: dt.date_naive().format("%Y-%m-%d").to_string(),
+            time: dt.time().format("%H:%M").to_string(),
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume.round() as u64,
         });
     }
 
@@ -711,6 +965,8 @@ async fn yahoo_market_data(
         "isDelayed": true,
         "bars": data.len(),
         "provider": MarketProvider::Yahoo.as_str(),
+        "timeframe": tf.name(),
+        "requestedDays": days,
     }))
 }
 
@@ -782,8 +1038,130 @@ async fn coinbase_market_data(
         "isDelayed": true,
         "bars": data.len(),
         "provider": MarketProvider::Coinbase.as_str(),
-        "isCrypto": true
+        "isCrypto": true,
+        "timeframe": interval,
     }))
+}
+
+async fn grid_scan_handler(Json(req): Json<GridScanRequest>) -> impl IntoResponse {
+    let tf = req
+        .tf
+        .as_deref()
+        .and_then(TimeFrame::from_str)
+        .unwrap_or(TimeFrame::Minutes(5));
+    let days = req.days.unwrap_or(60);
+
+    let ranges = req.ranges;
+    let grid = match (
+        to_param_range(ranges.ema_min, ranges.ema_max, ranges.ema_step),
+        to_param_range(ranges.band_min, ranges.band_max, ranges.band_step),
+        to_param_range(
+            ranges.atr_stop_min,
+            ranges.atr_stop_max,
+            ranges.atr_stop_step,
+        ),
+        to_param_range(
+            ranges.atr_target_min,
+            ranges.atr_target_max,
+            ranges.atr_target_step,
+        ),
+        to_param_range(ranges.risk_min, ranges.risk_max, ranges.risk_step),
+    ) {
+        (Some(ema), Some(band), Some(stop), Some(target), Some(risk)) => GridConfig {
+            ema,
+            band,
+            atr_stop: stop,
+            atr_target: target,
+            risk,
+        },
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "invalid ranges"})),
+            )
+                .into_response();
+        }
+    };
+
+    let counts = [
+        sample_count(&grid.ema),
+        sample_count(&grid.band),
+        sample_count(&grid.atr_stop),
+        sample_count(&grid.atr_target),
+        sample_count(&grid.risk),
+    ];
+    if counts.iter().any(|c| c.is_none()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid sample count"})),
+        )
+            .into_response();
+    }
+    let combos: u64 = counts.iter().map(|c| c.unwrap() as u64).product();
+    if combos == 0 || combos > 50_000 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "param grid too large"})),
+        )
+            .into_response();
+    }
+
+    let mut candles = match fetch_yahoo_history(&req.symbol, tf, days).await {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": "failed to fetch history"})),
+            )
+                .into_response()
+        }
+    };
+    candles.sort_by_key(|c| c.ts);
+
+    let ohlc: Vec<Ohlc> = candles
+        .iter()
+        .map(|c| Ohlc {
+            open: c.open as f32,
+            high: c.high as f32,
+            low: c.low as f32,
+            close: c.close as f32,
+        })
+        .collect();
+
+    let mut backtester = match GpuBacktester::new().await {
+        Ok(b) => b,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("gpu init failed: {e}")})),
+            )
+                .into_response()
+        }
+    };
+
+    let cost = CostModel {
+        per_trade: req.per_trade_cost.unwrap_or(0.0),
+        slippage_bps: req.slippage_bps.unwrap_or(0.0),
+        ..Default::default()
+    };
+
+    let metrics = match backtester.run_param_sweep(&ohlc, &grid, cost).await {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("scan failed: {e}")})),
+            )
+                .into_response()
+        }
+    };
+
+    Json(GridScanResponse {
+        metrics,
+        combos: combos as u32,
+        bars: ohlc.len(),
+    })
+    .into_response()
 }
 
 #[cfg(test)]
@@ -846,8 +1224,7 @@ async fn handle_ws(stream: WebSocket, _state: ServerState, params: WsParams) {
         .and_then(TimeFrame::from_str)
         .unwrap_or(TimeFrame::Minutes(1));
     let env_provider = env::var(DEFAULT_PROVIDER_ENV).ok();
-    let provider =
-        MarketProvider::from_str(params.provider.as_deref().or(env_provider.as_deref()));
+    let provider = MarketProvider::from_str(params.provider.as_deref().or(env_provider.as_deref()));
 
     // Per-connection local store so we can aggregate ticks into candles.
     let mut store = SeriesStore::new(tf);
@@ -888,6 +1265,7 @@ async fn handle_ws(stream: WebSocket, _state: ServerState, params: WsParams) {
 }
 
 async fn load_layout(State(state): State<ServerState>) -> impl IntoResponse {
+    // Return 200 with null when no layout is saved to avoid noisy 404 logs in the UI.
     let layout = state.layout_store.lock().unwrap().clone();
     Json(layout)
 }

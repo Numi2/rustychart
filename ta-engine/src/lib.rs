@@ -148,20 +148,11 @@ impl FromStr for OutputKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndicatorParams {
     /// Simple moving average of a candle source over `period`.
-    Sma {
-        period: usize,
-        source: SourceField,
-    },
+    Sma { period: usize, source: SourceField },
     /// Exponential moving average of a candle source over `period`.
-    Ema {
-        period: usize,
-        source: SourceField,
-    },
+    Ema { period: usize, source: SourceField },
     /// Relative Strength Index (Wilder) of `period`.
-    Rsi {
-        period: usize,
-        source: SourceField,
-    },
+    Rsi { period: usize, source: SourceField },
     /// MACD: fast/slow EMAs and signal EMA on the diff.
     Macd {
         fast: usize,
@@ -176,18 +167,11 @@ pub enum IndicatorParams {
         source: SourceField,
     },
     /// Average True Range (Wilder) over `period`.
-    Atr {
-        period: usize,
-    },
+    Atr { period: usize },
     /// Stochastic oscillator: %K over `k_period`, %D SMA over `d_period`.
-    Stoch {
-        k_period: usize,
-        d_period: usize,
-    },
+    Stoch { k_period: usize, d_period: usize },
     /// Volume-weighted average price; resets by session/day if enabled.
-    Vwap {
-        reset_each_day: bool,
-    },
+    Vwap { reset_each_day: bool },
     /// Commodity Channel Index over `period` with scaling `constant` (typically 0.015).
     Cci {
         period: usize,
@@ -195,10 +179,7 @@ pub enum IndicatorParams {
         constant: f64,
     },
     /// Volume-weighted moving oscillator/average over `period`.
-    Vwmo {
-        period: usize,
-        source: SourceField,
-    },
+    Vwmo { period: usize, source: SourceField },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -899,12 +880,7 @@ impl IndicatorEngine for CciEngine {
             return None;
         }
         let mean = self.window.iter().sum::<f64>() / self.period as f64;
-        let dev = self
-            .window
-            .iter()
-            .map(|v| (v - mean).abs())
-            .sum::<f64>()
-            / self.period as f64;
+        let dev = self.window.iter().map(|v| (v - mean).abs()).sum::<f64>() / self.period as f64;
         let cci = if dev.abs() < 1e-12 {
             0.0
         } else {
@@ -984,96 +960,96 @@ fn default_line_styles(kind: IndicatorKind, dim: usize) -> Vec<LineStyle> {
     match kind {
         IndicatorKind::Sma => {
             out.push(LineStyle {
-                color: "#ffeb3b".to_string(),
-                width: 1.5,
+                color: "#7ee0ff".to_string(),
+                width: 1.8,
                 pattern: LinePattern::Solid,
             });
         }
         IndicatorKind::Ema => {
             out.push(LineStyle {
-                color: "#ff9800".to_string(),
-                width: 1.5,
+                color: "#ff8ba7".to_string(),
+                width: 1.8,
                 pattern: LinePattern::Solid,
             });
         }
         IndicatorKind::Rsi => {
             out.push(LineStyle {
-                color: "#42a5f5".to_string(),
-                width: 1.5,
+                color: "#7dd3fc".to_string(),
+                width: 1.6,
                 pattern: LinePattern::Solid,
             });
         }
         IndicatorKind::Macd => {
             out.push(LineStyle {
-                color: "#26a69a".to_string(),
-                width: 1.5,
+                color: "#4ade80".to_string(),
+                width: 1.8,
                 pattern: LinePattern::Solid,
             });
             out.push(LineStyle {
-                color: "#ef5350".to_string(),
-                width: 1.5,
+                color: "#f472b6".to_string(),
+                width: 1.6,
                 pattern: LinePattern::Solid,
             });
             out.push(LineStyle {
-                color: "#9e9e9e".to_string(),
-                width: 1.0,
-                pattern: LinePattern::Dashed,
+                color: "#94a3b8".to_string(),
+                width: 1.2,
+                pattern: LinePattern::Dotted,
             });
         }
         IndicatorKind::Bbands => {
             out.push(LineStyle {
-                color: "#90caf9".to_string(),
-                width: 1.0,
+                color: "#60a5fa".to_string(),
+                width: 1.2,
                 pattern: LinePattern::Solid,
             });
             out.push(LineStyle {
-                color: "#90caf9".to_string(),
+                color: "#93c5fd".to_string(),
                 width: 1.0,
                 pattern: LinePattern::Dashed,
             });
             out.push(LineStyle {
-                color: "#90caf9".to_string(),
+                color: "#93c5fd".to_string(),
                 width: 1.0,
                 pattern: LinePattern::Dashed,
             });
         }
         IndicatorKind::Atr => {
             out.push(LineStyle {
-                color: "#ffb300".to_string(),
-                width: 1.5,
+                color: "#fbbf24".to_string(),
+                width: 1.6,
                 pattern: LinePattern::Solid,
             });
         }
         IndicatorKind::Stoch => {
             out.push(LineStyle {
-                color: "#4dd0e1".to_string(),
-                width: 1.3,
+                color: "#c084fc".to_string(),
+                width: 1.4,
                 pattern: LinePattern::Solid,
             });
             out.push(LineStyle {
-                color: "#ffd54f".to_string(),
-                width: 1.0,
+                color: "#facc15".to_string(),
+                width: 1.2,
                 pattern: LinePattern::Dashed,
             });
         }
         IndicatorKind::Vwap => {
             out.push(LineStyle {
-                color: "#7e57c2".to_string(),
-                width: 1.5,
+                color: "#8b5cf6".to_string(),
+                width: 1.8,
                 pattern: LinePattern::Solid,
             });
         }
         IndicatorKind::Cci => {
             out.push(LineStyle {
-                color: "#8bc34a".to_string(),
-                width: 1.4,
+                color: "#22d3ee".to_string(),
+                width: 1.6,
                 pattern: LinePattern::Solid,
             });
         }
         IndicatorKind::Vwmo => {
             out.push(LineStyle {
-                color: "#cddc39".to_string(),
-                width: 1.5,
+                color: "#38bdf8".to_string(),
+                width: 1.7,
                 pattern: LinePattern::Solid,
             });
         }
@@ -1122,13 +1098,9 @@ fn create_engine(kind: IndicatorKind, params: &IndicatorParams) -> Box<dyn Indic
             },
         ) => Box::new(BbandsEngine::new(*period, *stddev, *source)),
         (IndicatorKind::Atr, IndicatorParams::Atr { period }) => Box::new(AtrEngine::new(*period)),
-        (
-            IndicatorKind::Stoch,
-            IndicatorParams::Stoch {
-                k_period,
-                d_period,
-            },
-        ) => Box::new(StochEngine::new(*k_period, *d_period)),
+        (IndicatorKind::Stoch, IndicatorParams::Stoch { k_period, d_period }) => {
+            Box::new(StochEngine::new(*k_period, *d_period))
+        }
         (IndicatorKind::Vwap, IndicatorParams::Vwap { reset_each_day }) => {
             Box::new(VwapEngine::new(*reset_each_day))
         }
@@ -1140,10 +1112,9 @@ fn create_engine(kind: IndicatorKind, params: &IndicatorParams) -> Box<dyn Indic
                 constant,
             },
         ) => Box::new(CciEngine::new(*period, *source, *constant)),
-        (
-            IndicatorKind::Vwmo,
-            IndicatorParams::Vwmo { period, source },
-        ) => Box::new(VwmoEngine::new(*period, *source)),
+        (IndicatorKind::Vwmo, IndicatorParams::Vwmo { period, source }) => {
+            Box::new(VwmoEngine::new(*period, *source))
+        }
         _ => panic!("indicator params mismatch for {kind:?}"),
     }
 }
@@ -1326,8 +1297,12 @@ mod tests {
             d_period: 3,
         };
         let mut mgr = IndicatorManager::new(TimeFrame::Minutes(1));
-        let config =
-            IndicatorConfig::with_default_styles(IndicatorKind::Stoch, params, OutputKind::SeparatePane, Some(0));
+        let config = IndicatorConfig::with_default_styles(
+            IndicatorKind::Stoch,
+            params,
+            OutputKind::SeparatePane,
+            Some(0),
+        );
         let candles = (0..5)
             .map(|i| mk_candle(i as i64 * 60_000, 100.0 + i as f64))
             .collect::<Vec<_>>();
@@ -1340,10 +1315,16 @@ mod tests {
 
     #[test]
     fn vwap_resets_by_day_when_enabled() {
-        let params = IndicatorParams::Vwap { reset_each_day: true };
+        let params = IndicatorParams::Vwap {
+            reset_each_day: true,
+        };
         let mut mgr = IndicatorManager::new(TimeFrame::Minutes(1));
-        let config =
-            IndicatorConfig::with_default_styles(IndicatorKind::Vwap, params, OutputKind::Overlay, None);
+        let config = IndicatorConfig::with_default_styles(
+            IndicatorKind::Vwap,
+            params,
+            OutputKind::Overlay,
+            None,
+        );
         let mut candles = Vec::new();
         for i in 0..3 {
             candles.push(Candle {
@@ -1383,8 +1364,12 @@ mod tests {
             constant: 0.015,
         };
         let mut mgr = IndicatorManager::new(TimeFrame::Minutes(1));
-        let config =
-            IndicatorConfig::with_default_styles(IndicatorKind::Cci, params, OutputKind::SeparatePane, Some(0));
+        let config = IndicatorConfig::with_default_styles(
+            IndicatorKind::Cci,
+            params,
+            OutputKind::SeparatePane,
+            Some(0),
+        );
         let candles = (0..4)
             .map(|i| Candle {
                 ts: i * 60_000,
@@ -1409,8 +1394,12 @@ mod tests {
             source: SourceField::Close,
         };
         let mut mgr = IndicatorManager::new(TimeFrame::Minutes(1));
-        let config =
-            IndicatorConfig::with_default_styles(IndicatorKind::Vwmo, params, OutputKind::SeparatePane, Some(0));
+        let config = IndicatorConfig::with_default_styles(
+            IndicatorKind::Vwmo,
+            params,
+            OutputKind::SeparatePane,
+            Some(0),
+        );
         let candles = (0..4)
             .map(|i| Candle {
                 ts: i * 60_000,

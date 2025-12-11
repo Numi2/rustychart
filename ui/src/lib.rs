@@ -1,9 +1,10 @@
 pub mod app;
 pub mod chart;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod lab;
+pub mod perf;
 pub mod state;
 pub mod theme;
-pub mod perf;
-pub mod lab;
 
 pub use app::App;
 pub use perf::{default_scenarios, make_perf_state, PerfScenario};

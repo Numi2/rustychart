@@ -1,7 +1,8 @@
 use crate::language::SourceLang;
+use serde::Serialize;
 
 /// Simple, curated script templates to speed up authoring.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Template {
     pub name: &'static str,
     pub description: &'static str,
@@ -26,6 +27,20 @@ pub fn find_template(lang: SourceLang, name: &str) -> Option<Template> {
 
 fn pine_templates() -> Vec<Template> {
     vec![
+        Template {
+            name: "starter",
+            description: "Starter template with version, plot, alert",
+            source_lang: SourceLang::PineV5,
+            tags: &["starter", "onboarding", "alert"],
+            source: r#"//@version=6
+indicator("Starter", overlay=true)
+len = input.int(20, "Length")
+src = close
+ema1 = ta.ema(src, len)
+plot(ema1, title="ema")
+alertcondition(ta.crossover(src, ema1), "Cross Up", "Price crossed above EMA")
+"#,
+        },
         Template {
             name: "ema",
             description: "Single EMA with length input and plot",
@@ -88,6 +103,18 @@ alertcondition(ta.crossover(close, ema1), "Cross Up", "Price crossed above EMA")
 
 fn think_templates() -> Vec<Template> {
     vec![
+        Template {
+            name: "starter",
+            description: "Starter template with plot and alert",
+            source_lang: SourceLang::ThinkScriptSubset,
+            tags: &["starter", "onboarding", "alert"],
+            source: r#"
+input len = 20;
+def ema1 = ExpAverage(close, len);
+plot ema = ema1;
+alert crossUp = crossover(close, ema1);
+"#,
+        },
         Template {
             name: "ema",
             description: "Single EMA with length input and plot",

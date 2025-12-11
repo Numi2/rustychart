@@ -3,10 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    compat::{
-        CompatibilityIssue, CompatibilityReport, IssueSeverity, TranslationOutput, UnifiedIr,
-    },
-    language::SourceLang,
+    compat::{CompatibilityIssue, CompatibilityReport, TranslationOutput, UnifiedIr},
+    language::{DiagnosticCode, IssueSeverity, SourceLang, SourceSpan},
     manifest::Manifest,
     Expr, PriceField, ScriptSpec, SignalSpec, Source,
 };
@@ -92,19 +90,23 @@ impl PineParser {
             .any(|i| i.severity == IssueSeverity::Error)
     }
 
-    fn warn(&mut self, msg: &str, line: Option<usize>) {
+    fn warn(&mut self, code: DiagnosticCode, msg: &str, line: Option<usize>, hint: Option<&str>) {
         self.issues.push(CompatibilityIssue {
+            code,
             message: msg.to_string(),
             severity: IssueSeverity::Warning,
-            location: line.map(|l| (l, 0)),
+            span: line.map(|l| SourceSpan::single_line(l, 0, 0)),
+            hint: hint.map(|h| h.to_string()),
         });
     }
 
-    fn error(&mut self, msg: &str, line: Option<usize>) {
+    fn error(&mut self, code: DiagnosticCode, msg: &str, line: Option<usize>, hint: Option<&str>) {
         self.issues.push(CompatibilityIssue {
+            code,
             message: msg.to_string(),
             severity: IssueSeverity::Error,
-            location: line.map(|l| (l, 0)),
+            span: line.map(|l| SourceSpan::single_line(l, 0, 0)),
+            hint: hint.map(|h| h.to_string()),
         });
     }
 
@@ -158,8 +160,10 @@ impl PineParser {
                     .unwrap_or_else(|| format!("plot{}", plots.len() + 1));
                 let expr = self.parse_expr(&expr_text).unwrap_or_else(|| {
                     self.warn(
+                        DiagnosticCode::UnsupportedExpression,
                         "Unsupported plot expression, defaulting to NaN",
                         Some(idx + 1),
+                        Some("Simplify the expression or use ta.* helpers"),
                     );
                     Expr::Src(Source::Const(f64::NAN))
                 });
@@ -176,8 +180,10 @@ impl PineParser {
                     .unwrap_or_else(|| format!("alert{}", signals.len() + 1));
                 let expr = self.parse_expr(&cond).unwrap_or_else(|| {
                     self.warn(
+                        DiagnosticCode::UnsupportedExpression,
                         "Unsupported alert expression, defaulting to false",
                         Some(idx + 1),
+                        Some("Alert conditions must resolve to true/false"),
                     );
                     Expr::Src(Source::Const(0.0))
                 });
@@ -194,34 +200,50 @@ impl PineParser {
                 let lhs = lhs.trim();
                 let rhs = rhs.trim();
                 if lhs.is_empty() || rhs.is_empty() {
-                    self.warn("Malformed assignment", Some(idx + 1));
+                    self.warn(
+                        DiagnosticCode::MalformedAssignment,
+                        "Malformed assignment",
+                        Some(idx + 1),
+                        Some("Use `foo = expr` with a value-producing RHS"),
+                    );
                     continue;
                 }
                 if let Some(expr) = self.parse_expr(rhs) {
                     self.env.insert(lhs.to_string(), expr);
                 } else {
                     self.warn(
+                        DiagnosticCode::UnsupportedExpression,
                         "Unsupported expression in assignment; skipped",
                         Some(idx + 1),
+                        Some("Try basic math, ta.sma/ema/rsi, or identifiers"),
                     );
                 }
                 continue;
             }
 
-            self.warn("Ignored line (unsupported construct)", Some(idx + 1));
+            self.warn(
+                DiagnosticCode::ParseError,
+                "Ignored line (unsupported construct)",
+                Some(idx + 1),
+                Some("Remove unsupported directives or comment them out"),
+            );
         }
 
         if !self.version_seen {
             self.warn(
+                DiagnosticCode::MissingVersion,
                 "Missing //@version=6; proceeding with subset parsing",
                 Some(1),
+                Some("Add //@version=6 at the top for accurate parsing"),
             );
         }
 
         if plots.is_empty() && signals.is_empty() {
             self.error(
+                DiagnosticCode::MissingPlotOrSignal,
                 "No plots or signals found; script produces no outputs",
                 None,
+                Some("Add at least one plot() or alertcondition()"),
             );
         }
 
@@ -267,6 +289,15 @@ impl PineParser {
             || cleaned.contains('-')
         {
             return self.parse_binary(cleaned);
+        }
+
+        if cleaned.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            self.warn(
+                DiagnosticCode::UnknownIdentifier,
+                &format!("Unknown identifier `{cleaned}`"),
+                None,
+                Some("Declare it via `foo = ...` before using it"),
+            );
         }
 
         None
@@ -339,7 +370,12 @@ impl PineParser {
                 }
             }
             _ => {
-                self.warn(&format!("Unsupported function call: {func}"), None);
+                self.warn(
+                    DiagnosticCode::UnsupportedFunction,
+                    &format!("Unsupported function call: {func}"),
+                    None,
+                    Some("Supported: ta.sma/ema/rsi, ta.crossover/crossunder"),
+                );
                 None
             }
         }

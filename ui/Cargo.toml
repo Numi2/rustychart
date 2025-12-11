@@ -28,13 +28,11 @@ app-shell = { path = "../app-shell" }
 ta-engine = { path = "../ta-engine" }
 ts-core = { path = "../ts-core" }
 data-feed = { path = "../data-feed" }
+script-engine = { path = "../script-engine" }
 thiserror = "1"
 cfg-if = "1"
 console_error_panic_hook = { version = "0.1", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
-scan-engine = { path = "../scan-engine" }
-regime-engine = { path = "../regime-engine" }
-gpu_param_sweep = { path = "../gpu_param_sweep" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chart-frontend = { path = "../chart-frontend" }
@@ -45,6 +43,11 @@ js-sys = "0.3"
 leptos = { version = "0.6", default-features = false }
 leptos_meta = { version = "0.6", default-features = false }
 leptos_router = { version = "0.6", default-features = false }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+scan-engine = { path = "../scan-engine" }
+regime-engine = { path = "../regime-engine" }
+gpu_param_sweep = { path = "../gpu_param_sweep" }
 
 [dev-dependencies]
 serde_json = "1"

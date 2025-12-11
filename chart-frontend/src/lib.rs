@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -212,7 +213,11 @@ impl WebGlBackend {
         })
     }
 
-    fn build_program(gl: &WebGl2RenderingContext, vs_src: &str, fs_src: &str) -> Result<WebGlProgram, JsValue> {
+    fn build_program(
+        gl: &WebGl2RenderingContext,
+        vs_src: &str,
+        fs_src: &str,
+    ) -> Result<WebGlProgram, JsValue> {
         let vs = Self::compile_shader(gl, WebGl2RenderingContext::VERTEX_SHADER, vs_src)?;
         let fs = Self::compile_shader(gl, WebGl2RenderingContext::FRAGMENT_SHADER, fs_src)?;
         let program = gl
@@ -272,12 +277,7 @@ impl WebGlBackend {
                     u8::from_str_radix(&stripped[2..4], 16),
                     u8::from_str_radix(&stripped[4..6], 16),
                 ) {
-                    return [
-                        r as f32 / 255.0,
-                        g as f32 / 255.0,
-                        b as f32 / 255.0,
-                        1.0,
-                    ];
+                    return [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0];
                 }
             }
         }
@@ -328,12 +328,7 @@ impl RendererBackend for WebGlBackend {
             let idx = [0, 1, 2, 0, 2, 3];
             for i in idx {
                 verts.extend_from_slice(&[
-                    quad[i].0,
-                    quad[i].1,
-                    color[0],
-                    color[1],
-                    color[2],
-                    color[3],
+                    quad[i].0, quad[i].1, color[0], color[1], color[2], color[3],
                 ]);
             }
         }
@@ -353,8 +348,14 @@ impl RendererBackend for WebGlBackend {
 
         let stride = (6 * std::mem::size_of::<f32>()) as i32;
         self.gl.enable_vertex_attrib_array(0);
-        self.gl
-            .vertex_attrib_pointer_with_i32(0, 2, WebGl2RenderingContext::FLOAT, false, stride, 0);
+        self.gl.vertex_attrib_pointer_with_i32(
+            0,
+            2,
+            WebGl2RenderingContext::FLOAT,
+            false,
+            stride,
+            0,
+        );
         self.gl.enable_vertex_attrib_array(1);
         self.gl.vertex_attrib_pointer_with_i32(
             1,
@@ -365,7 +366,8 @@ impl RendererBackend for WebGlBackend {
             2 * 4,
         );
         let count = (verts.len() / 6) as i32;
-        self.gl.draw_arrays(WebGl2RenderingContext::LINES, 0, (candles.len() * 2) as i32);
+        self.gl
+            .draw_arrays(WebGl2RenderingContext::LINES, 0, (candles.len() * 2) as i32);
         let body_offset = (candles.len() * 2) as i32;
         let body_count = count - body_offset;
         if body_count > 0 {
@@ -386,10 +388,8 @@ impl RendererBackend for WebGlBackend {
             verts.extend_from_slice(&[nx, ny, rgba[0], rgba[1], rgba[2], rgba[3]]);
         }
         self.gl.bind_vertex_array(Some(&self.line_vao));
-        self.gl.bind_buffer(
-            WebGl2RenderingContext::ARRAY_BUFFER,
-            Some(&self.line_vbo),
-        );
+        self.gl
+            .bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&self.line_vbo));
         unsafe {
             let vert_array = js_sys::Float32Array::view(&verts);
             self.gl.buffer_data_with_array_buffer_view(
@@ -401,8 +401,14 @@ impl RendererBackend for WebGlBackend {
         self.gl.use_program(Some(&self.line_program));
         let stride = (6 * std::mem::size_of::<f32>()) as i32;
         self.gl.enable_vertex_attrib_array(0);
-        self.gl
-            .vertex_attrib_pointer_with_i32(0, 2, WebGl2RenderingContext::FLOAT, false, stride, 0);
+        self.gl.vertex_attrib_pointer_with_i32(
+            0,
+            2,
+            WebGl2RenderingContext::FLOAT,
+            false,
+            stride,
+            0,
+        );
         self.gl.enable_vertex_attrib_array(1);
         self.gl.vertex_attrib_pointer_with_i32(
             1,
@@ -431,10 +437,8 @@ impl RendererBackend for WebGlBackend {
             verts.extend_from_slice(&[nx2, ny2, rgba[0], rgba[1], rgba[2], rgba[3]]);
         }
         self.gl.bind_vertex_array(Some(&self.line_vao));
-        self.gl.bind_buffer(
-            WebGl2RenderingContext::ARRAY_BUFFER,
-            Some(&self.line_vbo),
-        );
+        self.gl
+            .bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&self.line_vbo));
         unsafe {
             let vert_array = js_sys::Float32Array::view(&verts);
             self.gl.buffer_data_with_array_buffer_view(
@@ -446,8 +450,14 @@ impl RendererBackend for WebGlBackend {
         self.gl.use_program(Some(&self.line_program));
         let stride = (6 * std::mem::size_of::<f32>()) as i32;
         self.gl.enable_vertex_attrib_array(0);
-        self.gl
-            .vertex_attrib_pointer_with_i32(0, 2, WebGl2RenderingContext::FLOAT, false, stride, 0);
+        self.gl.vertex_attrib_pointer_with_i32(
+            0,
+            2,
+            WebGl2RenderingContext::FLOAT,
+            false,
+            stride,
+            0,
+        );
         self.gl.enable_vertex_attrib_array(1);
         self.gl.vertex_attrib_pointer_with_i32(
             1,
@@ -458,8 +468,11 @@ impl RendererBackend for WebGlBackend {
             2 * 4,
         );
         self.gl.line_width(width.clamp(1.0, 10.0)); // clamp for cross-browser support
-        self.gl
-            .draw_arrays(WebGl2RenderingContext::LINES, 0, (segments.len() * 2) as i32);
+        self.gl.draw_arrays(
+            WebGl2RenderingContext::LINES,
+            0,
+            (segments.len() * 2) as i32,
+        );
         self.gl.bind_vertex_array(None);
     }
 
@@ -550,6 +563,7 @@ struct Chart {
     feed_store: Rc<RefCell<FeedStore>>,
     timeframe: TimeFrame,
     style: SeriesStyle,
+    log_scale: bool,
 
     width: f64,
     height: f64,
@@ -565,6 +579,8 @@ struct Chart {
     // Layout: price + indicator panes.
     price_panel_top: f64,
     price_panel_height: f64,
+    price_weight: f64,
+    pane_weights: HashMap<u32, f64>,
 
     auto_scroll: bool,
 
@@ -619,6 +635,7 @@ impl Chart {
     ) -> Result<Self, JsValue> {
         let width = canvas.width() as f64;
         let height = canvas.height() as f64;
+        let base_tf_ms = Self::tf_ms(timeframe);
 
         let doc = canvas
             .owner_document()
@@ -665,10 +682,7 @@ impl Chart {
         };
 
         let now_ms = Date::now() as i64;
-        let default_span_ms = match timeframe {
-            TimeFrame::Tick => 10 * 60_000,
-            _ => timeframe.duration_ms() * 200,
-        };
+        let default_span_ms = (base_tf_ms * 400).max(10_000);
 
         Ok(Self {
             canvas,
@@ -677,6 +691,7 @@ impl Chart {
             feed_store,
             timeframe,
             style: SeriesStyle::Candle,
+            log_scale: false,
             width,
             height,
             visible_start: now_ms - default_span_ms,
@@ -685,6 +700,8 @@ impl Chart {
             y_max: 1.0,
             price_panel_top: 0.0,
             price_panel_height: height,
+            price_weight: 1.0,
+            pane_weights: HashMap::new(),
             auto_scroll: true,
             is_dragging: false,
             last_pointer_x: 0.0,
@@ -713,12 +730,18 @@ impl Chart {
         })
     }
 
+    #[inline]
+    fn tf_ms(tf: TimeFrame) -> i64 {
+        tf.duration_ms().max(1)
+    }
+
     fn resize(&mut self, width: f64, height: f64) {
         self.width = width.max(1.0);
         self.height = height.max(1.0);
         self.canvas.set_width(self.width as u32);
         self.canvas.set_height(self.height as u32);
-        self.background.begin_frame(self.width, self.height, "#0b1015");
+        self.background
+            .begin_frame(self.width, self.height, "#0c111a");
         self.price_panel_top = 0.0;
         self.price_panel_height = self.height;
         self.dirty = true;
@@ -739,6 +762,18 @@ impl Chart {
         };
         self.dirty = true;
         self.dirty_price_panel = true;
+        self.dirty_background = true;
+    }
+
+    fn set_pane_layout(&mut self, price_weight: f64, panes: &[(u32, f64)]) {
+        self.price_weight = price_weight.max(0.1);
+        self.pane_weights.clear();
+        for (id, weight) in panes {
+            self.pane_weights.insert(*id, weight.max(0.1));
+        }
+        self.dirty = true;
+        self.dirty_price_panel = true;
+        self.dirty_indicator_panes = true;
         self.dirty_background = true;
     }
 
@@ -875,6 +910,7 @@ impl Chart {
 
     fn on_data_updated(&mut self) {
         let base_tf = self.timeframe;
+        let base_tf_ms = Self::tf_ms(base_tf);
         let (first_ts, last_ts) = {
             let fs = self.feed_store.borrow();
             let store = fs.store();
@@ -887,11 +923,12 @@ impl Chart {
         };
 
         if self.visible_end <= self.visible_start {
+            let span = (last_ts - first_ts).abs().max(base_tf_ms * 4);
             self.visible_start = first_ts;
-            self.visible_end = last_ts + base_tf.duration_ms();
+            self.visible_end = first_ts + span;
         } else if self.auto_scroll {
-            let span = self.visible_end - self.visible_start;
-            self.visible_end = last_ts + base_tf.duration_ms();
+            let span = (self.visible_end - self.visible_start).max(base_tf_ms * 4);
+            self.visible_end = last_ts + base_tf_ms;
             self.visible_start = self.visible_end - span;
         }
 
@@ -931,17 +968,30 @@ impl Chart {
     // --- coordinate transforms ----------------------------------------------
 
     fn price_to_y(&self, price: f64) -> f64 {
+        let p = if self.log_scale {
+            if price > 0.0 {
+                price.ln()
+            } else {
+                self.y_min
+            }
+        } else {
+            price
+        };
         let range = (self.y_max - self.y_min).max(1e-9);
-        let norm = (price - self.y_min) / range;
+        let norm = (p - self.y_min) / range;
         self.price_panel_top + self.price_panel_height - norm * self.price_panel_height
     }
 
     fn y_to_price(&self, y: f64) -> f64 {
         let range = (self.y_max - self.y_min).max(1e-9);
-        let rel =
-            (self.price_panel_top + self.price_panel_height - y) / self.price_panel_height;
+        let rel = (self.price_panel_top + self.price_panel_height - y) / self.price_panel_height;
         let rel_clamped = rel.clamp(0.0, 1.0);
-        self.y_min + rel_clamped * range
+        let v = self.y_min + rel_clamped * range;
+        if self.log_scale {
+            v.exp()
+        } else {
+            v
+        }
     }
 
     fn time_to_x(&self, ts: Timestamp) -> f64 {
@@ -973,11 +1023,10 @@ impl Chart {
     fn nearest_candle(&self, ts: Timestamp) -> Option<Candle> {
         let fs = self.feed_store.borrow();
         let store = fs.store();
-        let slice = store.series(self.timeframe).range(self.visible_start, self.visible_end);
-        slice
-            .iter()
-            .min_by_key(|c| (c.ts - ts).abs())
-            .cloned()
+        let slice = store
+            .series(self.timeframe)
+            .range(self.visible_start, self.visible_end);
+        slice.iter().min_by_key(|c| (c.ts - ts).abs()).cloned()
     }
 
     fn set_crosshair(&mut self, ts: Timestamp, price: f64) {
@@ -1247,7 +1296,8 @@ impl Chart {
                     }
                 }
                 DrawingKind::VerticalLine => {
-                    if (d.ts1 - ts).abs() as f64 <= (self.visible_end - self.visible_start) as f64 * 0.01
+                    if (d.ts1 - ts).abs() as f64
+                        <= (self.visible_end - self.visible_start) as f64 * 0.01
                     {
                         return Some(d.id);
                     }
@@ -1352,17 +1402,36 @@ impl Chart {
             ids
         };
 
-        let pane_count = pane_ids.len();
-        let pane_height = if pane_count == 0 {
+        let mut pane_layout: Vec<(u32, f64, f64)> = Vec::new();
+        if pane_ids.is_empty() {
             self.price_panel_top = 0.0;
             self.price_panel_height = self.height;
-            0.0
         } else {
-            let h = self.height / (pane_count as f64 + 1.0);
+            let mut total_weight = self.price_weight.max(0.1);
+            for pid in pane_ids.iter() {
+                total_weight += self
+                    .pane_weights
+                    .get(pid)
+                    .copied()
+                    .unwrap_or(1.0)
+                    .max(0.1);
+            }
             self.price_panel_top = 0.0;
-            self.price_panel_height = h;
-            h
-        };
+            self.price_panel_height =
+                self.height * (self.price_weight.max(0.1) / total_weight.max(0.1));
+            let mut cursor = self.price_panel_height;
+            for pid in pane_ids.iter() {
+                let w = self
+                    .pane_weights
+                    .get(pid)
+                    .copied()
+                    .unwrap_or(1.0)
+                    .max(0.1);
+                let h = self.height * (w / total_weight.max(0.1));
+                pane_layout.push((*pid, cursor, h));
+                cursor += h;
+            }
+        }
 
         // Downsample visible main candles (~ one per pixel).
         self.downsample_buf.clear();
@@ -1394,9 +1463,21 @@ impl Chart {
         if !min_p.is_finite() || !max_p.is_finite() || max_p <= min_p {
             return (Vec::new(), Vec::new());
         }
-        let pad = (max_p - min_p) * 0.05;
-        self.y_min = min_p - pad;
-        self.y_max = max_p + pad;
+        if self.log_scale && min_p <= 0.0 {
+            // Fallback to linear if prices are non-positive.
+            self.log_scale = false;
+        }
+        if self.log_scale {
+            let min_t = min_p.ln();
+            let max_t = max_p.ln();
+            let pad = (max_t - min_t).max(1e-6) * 0.05;
+            self.y_min = min_t - pad;
+            self.y_max = max_t + pad;
+        } else {
+            let pad = (max_p - min_p) * 0.035;
+            self.y_min = min_p - pad;
+            self.y_max = max_p + pad;
+        }
 
         let price_ticks = self.price_ticks(5);
         let time_ticks = self.time_ticks(6);
@@ -1411,13 +1492,14 @@ impl Chart {
             grid_segments.push((x, self.price_panel_top, x, self.height));
         }
 
+        // Slightly brighter canvas background and higher-contrast grid.
         self.background
-            .begin_frame(self.width, self.height, "#0b1015");
+            .begin_frame(self.width, self.height, "#0c111a");
         self.background
-            .draw_segments(&grid_segments, "#1c252e", 1.0);
+            .draw_segments(&grid_segments, "#1b2836", 1.0);
 
         // Main price series.
-        let bar_width = (self.width / candles.len().max(1) as f64 * 0.8).max(1.0);
+        let bar_width = (self.width / candles.len().max(1) as f64 * 0.7).clamp(2.0, 14.0);
         let half_w = bar_width * 0.5;
         let mut plot_candles = Vec::with_capacity(candles.len());
         for c in candles {
@@ -1433,7 +1515,7 @@ impl Chart {
             });
         }
         self.background
-            .draw_candles(&plot_candles, "#26a69a", "#ef5350");
+            .draw_candles(&plot_candles, "#4ade80", "#ef4444");
 
         // Overlays on price panel.
         for inst in self.indicator_mgr.indicators() {
@@ -1462,10 +1544,8 @@ impl Chart {
         }
 
         // Separate panes.
-        if pane_count > 0 {
-            for (idx, pane_id) in pane_ids.iter().enumerate() {
-                let top = self.price_panel_height * (idx as f64 + 1.0);
-
+        if !pane_layout.is_empty() {
+            for (pane_id, pane_top, pane_height) in pane_layout.iter() {
                 // y range
                 let mut min_v = f64::MAX;
                 let mut max_v = f64::MIN;
@@ -1511,7 +1591,11 @@ impl Chart {
                             if let Some(v) = sample.values.get(line_idx) {
                                 if v.is_finite() {
                                     let y = self.indicator_value_to_y(
-                                        *v, min_v, max_v, top, pane_height,
+                                        *v,
+                                        min_v,
+                                        max_v,
+                                        *pane_top,
+                                        *pane_height,
                                     );
                                     pts.push((self.time_to_x(sample.ts), y));
                                 }
@@ -1593,11 +1677,9 @@ impl Chart {
             ctx.set_fill_style_str(color);
             let label = format!("{} @ {}", order.label, order.price);
             ctx.fill_rect(0.0, y - 10.0, (label.len() as f64 * 6.0) + 8.0, 18.0);
-            ctx.set_fill_style_str("#0b1015");
-            ctx.set_font("12px sans-serif");
-            ctx
-                .fill_text(&label, 4.0, y + 3.0)
-                .unwrap_or_default();
+            ctx.set_fill_style_str("#0f1724");
+            ctx.set_font("12px 'Inter', sans-serif");
+            ctx.fill_text(&label, 4.0, y + 3.0).unwrap_or_default();
 
             if let Some(stop) = order.stop_price {
                 let y_stop = self.price_to_y(stop);
@@ -1628,9 +1710,7 @@ impl Chart {
             let color = if alert.fired { "#f6c343" } else { "#64b5f6" };
             ctx.set_fill_style_str(color);
             ctx.begin_path();
-            ctx
-                .arc(x, y, 5.0, 0.0, std::f64::consts::PI * 2.0)
-                .ok();
+            ctx.arc(x, y, 5.0, 0.0, std::f64::consts::PI * 2.0).ok();
             ctx.fill();
         }
 
@@ -1665,10 +1745,13 @@ impl Chart {
 
         // Crosshair overlay.
         if let Some((x, y, ts, price)) = self.crosshair {
-            ctx.set_stroke_style_str("#78909c");
+            ctx.set_stroke_style_str("#8ab4ff");
             ctx.set_line_width(1.0);
-            ctx.set_line_dash(&Array::of2(&JsValue::from_f64(4.0), &JsValue::from_f64(4.0)))
-                .ok();
+            ctx.set_line_dash(&Array::of2(
+                &JsValue::from_f64(4.0),
+                &JsValue::from_f64(4.0),
+            ))
+            .ok();
             ctx.begin_path();
             ctx.move_to(x, self.price_panel_top);
             ctx.line_to(x, self.price_panel_top + self.price_panel_height);
@@ -1679,11 +1762,11 @@ impl Chart {
 
             // Price label
             let label = format!("{price:.2}");
-            ctx.set_fill_style_str("#263238");
+            ctx.set_fill_style_str("#0f1724");
             let box_width = (label.len() as f64 * 7.0) + 10.0;
             ctx.fill_rect(self.width - box_width, y - 10.0, box_width, 20.0);
             ctx.set_fill_style_str("#ffffff");
-            ctx.set_font("12px sans-serif");
+            ctx.set_font("12px 'Inter', sans-serif");
             ctx.fill_text(&label, self.width - box_width + 4.0, y + 4.0)
                 .ok();
 
@@ -1694,9 +1777,10 @@ impl Chart {
                 .as_string()
                 .unwrap_or_else(|| dt.to_iso_string().as_string().unwrap_or_default());
             let time_box = (time_label.len() as f64 * 6.0) + 10.0;
-            ctx.set_fill_style_str("#263238");
+            ctx.set_fill_style_str("#0f1724");
             ctx.fill_rect(x - time_box * 0.5, self.height - 24.0, time_box, 20.0);
             ctx.set_fill_style_str("#ffffff");
+            ctx.set_font("12px 'Inter', sans-serif");
             ctx.fill_text(&time_label, x - time_box * 0.5 + 4.0, self.height - 8.0)
                 .ok();
 
@@ -1706,12 +1790,11 @@ impl Chart {
                     candle.open, candle.high, candle.low, candle.close, candle.volume
                 );
                 let info_w = (info.len() as f64 * 6.5) + 12.0;
-                ctx.set_fill_style_str("#0f1720");
+                ctx.set_fill_style_str("#0f1724");
                 ctx.fill_rect(8.0, self.price_panel_top + 8.0, info_w, 20.0);
                 ctx.set_fill_style_str("#ffffff");
-                ctx.set_font("12px sans-serif");
-                ctx.fill_text(&info, 12.0, self.price_panel_top + 22.0)
-                    .ok();
+                ctx.set_font("12px 'Inter', sans-serif");
+                ctx.fill_text(&info, 12.0, self.price_panel_top + 22.0).ok();
             }
         }
     }
@@ -1748,9 +1831,13 @@ impl Chart {
         }
         let span = (self.y_max - self.y_min).max(1e-6);
         let step = span / (count as f64 - 1.0);
-        (0..count)
-            .map(|i| self.y_min + step * i as f64)
-            .collect()
+        if self.log_scale {
+            (0..count)
+                .map(|i| (self.y_min + step * i as f64).exp())
+                .collect()
+        } else {
+            (0..count).map(|i| self.y_min + step * i as f64).collect()
+        }
     }
 
     fn time_ticks(&self, count: usize) -> Vec<Timestamp> {
@@ -1769,12 +1856,12 @@ impl Chart {
 
     fn draw_axis_labels(&self, price_ticks: &[f64], time_ticks: &[Timestamp]) {
         let ctx = &self.ctx;
-        ctx.set_fill_style_str("#9ea7b3");
-        ctx.set_font("11px sans-serif");
+        ctx.set_fill_style_str("#d5e0ef");
+        ctx.set_font("12px 'Inter', sans-serif");
         for p in price_ticks {
             let y = self.price_to_y(*p);
             let label = format!("{p:.2}");
-            ctx.fill_text(&label, self.width - 64.0, y - 2.0).ok();
+            ctx.fill_text(&label, self.width - 64.0, y - 1.0).ok();
         }
 
         for t in time_ticks {
@@ -1784,7 +1871,7 @@ impl Chart {
                 .to_locale_time_string("en-GB")
                 .as_string()
                 .unwrap_or_else(|| dt.to_time_string().as_string().unwrap_or_default());
-            ctx.fill_text(&label, x - 24.0, self.height - 4.0).ok();
+            ctx.fill_text(&label, x - 28.0, self.height - 4.0).ok();
         }
     }
 }
@@ -1818,11 +1905,24 @@ struct EventSubscription {
     callback: Function,
 }
 
+/// Ensure the canvas matches the layouted size of its container.
+fn resize_canvas_to_parent(inner: &Rc<RefCell<ChartHandleInner>>) {
+    let canvas = { inner.borrow().chart.canvas.clone() };
+    let rect = canvas.get_bounding_client_rect();
+    let width = rect.width().max(1.0);
+    let height = rect.height().max(1.0);
+    {
+        let mut inner_mut = inner.borrow_mut();
+        inner_mut.chart.resize(width, height);
+    }
+}
+
 struct ChartHandleInner {
     symbol: String,
     base_timeframe: TimeFrame,
     http_base: String,
     ws_base: String,
+    provider_override: Option<String>,
     chart: Chart,
 
     feeds_live: bool,
@@ -1847,7 +1947,8 @@ impl ChartHandleInner {
     fn add_subscription(&mut self, cb: Function) -> u32 {
         let id = self.next_event_id;
         self.next_event_id = self.next_event_id.wrapping_add(1);
-        self.subscribers.push(EventSubscription { id, callback: cb });
+        self.subscribers
+            .push(EventSubscription { id, callback: cb });
         id
     }
 
@@ -1940,8 +2041,9 @@ fn setup_mouse_events(inner_rc: &Rc<RefCell<ChartHandleInner>>) -> Result<(), Js
     {
         let inner = inner_rc.clone();
         let canvas_clone = canvas.clone();
+        let opts = web_sys::AddEventListenerOptions::new();
+        opts.set_passive(true);
         let closure = Closure::<dyn FnMut(WheelEvent)>::wrap(Box::new(move |event: WheelEvent| {
-            event.prevent_default();
             let rect = canvas_clone.get_bounding_client_rect();
             let x = event.client_x() as f64 - rect.left();
             let y = event.client_y() as f64 - rect.top();
@@ -1952,7 +2054,11 @@ fn setup_mouse_events(inner_rc: &Rc<RefCell<ChartHandleInner>>) -> Result<(), Js
                 inner_mut.dispatch_event(&ChartEvent::ViewChanged { start, end });
             }
         }));
-        canvas.add_event_listener_with_callback("wheel", closure.as_ref().unchecked_ref())?;
+        canvas.add_event_listener_with_callback_and_add_event_listener_options(
+            "wheel",
+            closure.as_ref().unchecked_ref(),
+            &opts,
+        )?;
         closure.forget();
     }
 
@@ -2005,15 +2111,35 @@ struct MarketDataBar {
     volume: Option<f64>,
 }
 
-fn provider_for_symbol(symbol: &str) -> &'static str {
+fn read_global(key: &str) -> Option<String> {
+    Reflect::get(&js_sys::global(), &JsValue::from_str(key))
+        .ok()
+        .and_then(|v| v.as_string())
+}
+
+fn normalize_provider(value: &str) -> Option<String> {
+    match value.to_ascii_lowercase().as_str() {
+        "alpha" | "alphavantage" | "av" => Some("alpha".to_string()),
+        "coinbase" | "cb" => Some("coinbase".to_string()),
+        "yahoo" => Some("yahoo".to_string()),
+        _ => None,
+    }
+}
+
+fn provider_for_symbol(symbol: &str, override_provider: Option<&str>) -> String {
+    if let Some(p) = override_provider {
+        if let Some(norm) = normalize_provider(p) {
+            return norm;
+        }
+    }
     let s = symbol.to_ascii_uppercase();
     if s.contains('-') {
-        return "coinbase";
+        return "coinbase".to_string();
     }
     if s.ends_with("USD") || s.ends_with("USDT") || s.ends_with("USDC") {
-        return "coinbase";
+        return "coinbase".to_string();
     }
-    "yahoo"
+    "alpha".to_string()
 }
 
 fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
@@ -2037,80 +2163,112 @@ fn init_feeds(inner_rc: Rc<RefCell<ChartHandleInner>>) {
             return;
         }
 
-        let provider = provider_for_symbol(&symbol);
+        let provider_override = { rc.borrow().provider_override.clone() };
+        let provider = provider_for_symbol(&symbol, provider_override.as_deref());
         let base_http = http_base.trim_end_matches('/');
         let base_ws = ws_base.trim_end_matches('/');
 
-        // History via new market-data endpoint.
-        let history_url = format!(
-            "{}/market-data?symbol={}&interval={}&provider={}",
-            base_http,
-            symbol,
-            base_tf.name(),
-            provider
-        );
-        if let Ok(resp) = Request::get(&history_url).send().await {
-            if !rc.borrow().feeds_live {
-                return;
-            }
-            if let Ok(body) = resp.json::<MarketDataResponse>().await {
-                let mut candles: Vec<Candle> = body
-                    .data
-                    .into_iter()
-                    .filter_map(|bar| {
-                        let ts = bar.ts.or_else(|| {
-                            let iso = format!("{}T{}:00Z", bar.date, bar.time);
-                            let ts_ms = Date::new(&JsValue::from_str(&iso)).get_time();
-                            if ts_ms.is_nan() {
-                                None
-                            } else {
-                                Some(ts_ms as i64)
-                            }
-                        })?;
-                        Some(Candle {
-                            ts,
-                            timeframe: base_tf,
-                            open: bar.open,
-                            high: bar.high,
-                            low: bar.low,
-                            close: bar.close,
-                            volume: bar.volume.unwrap_or(0.0),
-                        })
-                    })
-                    .collect();
-
-                candles.sort_by_key(|c| c.ts);
-
-                let ev = DataEvent::HistoryBatch {
-                    timeframe: base_tf,
-                    candles,
-                    prepend: false,
-                };
-                let mut inner_mut = rc.borrow_mut();
-                if !inner_mut.feeds_live {
+        if provider == "alpha" {
+            let history_url = format!(
+                "{}/history?symbol={}&tf={}&provider=alpha&outputsize=compact",
+                base_http,
+                symbol,
+                base_tf.name()
+            );
+            if let Ok(resp) = Request::get(&history_url).send().await {
+                if !rc.borrow().feeds_live {
                     return;
                 }
-                inner_mut.chart.apply_data_event(ev);
-            }
-        }
-
-        // WebSocket
-        let ws_url = format!(
-            "{}?symbol={}&tf={}&provider={}",
-            base_ws, symbol, base_tf.name(), provider
-        );
-        if let Ok(mut ws) = WebSocket::open(&ws_url) {
-            while let Some(msg) = ws.next().await {
-                if !rc.borrow().feeds_live {
-                    break;
+                if let Ok(candles) = resp.json::<Vec<Candle>>().await {
+                    let mut candles = candles;
+                    candles.sort_by_key(|c| c.ts);
+                    let ev = DataEvent::HistoryBatch {
+                        timeframe: base_tf,
+                        candles,
+                        prepend: false,
+                    };
+                    let mut inner_mut = rc.borrow_mut();
+                    if !inner_mut.feeds_live {
+                        return;
+                    }
+                    inner_mut.chart.apply_data_event(ev);
                 }
-                if let Ok(WsMessage::Text(txt)) = msg {
-                    if let Ok(ev) = serde_json::from_str::<DataEvent>(&txt) {
-                        let mut inner_mut = rc.borrow_mut();
-                        if !inner_mut.feeds_live {
-                            break;
+            }
+        } else {
+            // History via existing market-data endpoint.
+            let history_url = format!(
+                "{}/market-data?symbol={}&interval={}&provider={}",
+                base_http,
+                symbol,
+                base_tf.name(),
+                provider
+            );
+            if let Ok(resp) = Request::get(&history_url).send().await {
+                if !rc.borrow().feeds_live {
+                    return;
+                }
+                if let Ok(body) = resp.json::<MarketDataResponse>().await {
+                    let mut candles: Vec<Candle> = body
+                        .data
+                        .into_iter()
+                        .filter_map(|bar| {
+                            let ts = bar.ts.or_else(|| {
+                                let iso = format!("{}T{}:00Z", bar.date, bar.time);
+                                let ts_ms = Date::new(&JsValue::from_str(&iso)).get_time();
+                                if ts_ms.is_nan() {
+                                    None
+                                } else {
+                                    Some(ts_ms as i64)
+                                }
+                            })?;
+                            Some(Candle {
+                                ts,
+                                timeframe: base_tf,
+                                open: bar.open,
+                                high: bar.high,
+                                low: bar.low,
+                                close: bar.close,
+                                volume: bar.volume.unwrap_or(0.0),
+                            })
+                        })
+                        .collect();
+
+                    candles.sort_by_key(|c| c.ts);
+
+                    let ev = DataEvent::HistoryBatch {
+                        timeframe: base_tf,
+                        candles,
+                        prepend: false,
+                    };
+                    let mut inner_mut = rc.borrow_mut();
+                    if !inner_mut.feeds_live {
+                        return;
+                    }
+                    inner_mut.chart.apply_data_event(ev);
+                }
+            }
+
+            // WebSocket for supported providers.
+            let ws_url = format!(
+                "{}?symbol={}&tf={}&provider={}",
+                base_ws,
+                symbol,
+                base_tf.name(),
+                provider
+            );
+            if let Ok(mut ws) = WebSocket::open(&ws_url) {
+                while let Some(msg) = ws.next().await {
+                    if !rc.borrow().feeds_live {
+                        break;
+                    }
+                    if let Ok(WsMessage::Text(txt)) = msg {
+                        if let Ok(ev) = serde_json::from_str::<DataEvent>(&txt) {
+                            let mut inner_mut = rc.borrow_mut();
+                            if !inner_mut.feeds_live {
+                                break;
+                            }
+                            inner_mut.chart.apply_data_event(ev);
                         }
-                        inner_mut.chart.apply_data_event(ev);
                     }
                 }
             }
@@ -2149,11 +2307,6 @@ impl ChartHandle {
             .dyn_into::<HtmlCanvasElement>()
             .map_err(|_| JsValue::from_str("element is not a canvas"))?;
 
-        let client_width = canvas.client_width().max(1) as u32;
-        let client_height = canvas.client_height().max(1) as u32;
-        canvas.set_width(client_width);
-        canvas.set_height(client_height);
-
         let context = canvas
             .get_context("2d")?
             .ok_or_else(|| JsValue::from_str("no 2d context"))?
@@ -2162,16 +2315,45 @@ impl ChartHandle {
         let feed_store_rc = Rc::new(RefCell::new(FeedStore::new(symbol.to_string(), tf)));
         let chart = Chart::new(canvas.clone(), context, feed_store_rc, tf)?;
 
+        let provider_override =
+            read_global("RUSTYCHART_DEFAULT_PROVIDER").and_then(|p| normalize_provider(&p));
+
         let inner = Rc::new(RefCell::new(ChartHandleInner {
             symbol: symbol.to_string(),
             base_timeframe: tf,
             http_base: http_base.to_string(),
             ws_base: ws_base.to_string(),
+            provider_override,
             chart,
             feeds_live: true,
             next_event_id: 1,
             subscribers: Vec::new(),
         }));
+
+        // Fit the canvas to the rendered cell size (including after layout shifts).
+        resize_canvas_to_parent(&inner);
+        {
+            let inner_clone = inner.clone();
+            let window = web_sys::window().unwrap();
+            let resize_cb = Closure::<dyn FnMut()>::wrap(Box::new(move || {
+                resize_canvas_to_parent(&inner_clone);
+            }));
+            window
+                .add_event_listener_with_callback("resize", resize_cb.as_ref().unchecked_ref())?;
+            resize_cb.forget();
+        }
+        {
+            // One extra pass on the next frame to catch initial layout.
+            let inner_clone = inner.clone();
+            let window = web_sys::window().unwrap();
+            let raf = Closure::<dyn FnMut(f64)>::wrap(Box::new(move |_| {
+                resize_canvas_to_parent(&inner_clone);
+            }));
+            window
+                .request_animation_frame(raf.as_ref().unchecked_ref())
+                .map_err(|_| JsValue::from_str("failed to schedule resize"))?;
+            raf.forget();
+        }
 
         setup_mouse_events(&inner)?;
         start_render_loop(inner.clone());
@@ -2190,6 +2372,26 @@ impl ChartHandle {
     pub fn set_style(&self, style: &str) {
         let mut inner = self.inner.borrow_mut();
         inner.chart.set_style(style);
+    }
+
+    /// Set price scale mode: "linear" or "log".
+    pub fn set_scale(&self, scale: &str) {
+        let mut inner = self.inner.borrow_mut();
+        let log = matches!(scale.to_ascii_lowercase().as_str(), "log" | "logarithmic");
+        if inner.chart.log_scale != log {
+            inner.chart.log_scale = log;
+            inner.chart.dirty = true;
+            inner.chart.dirty_price_panel = true;
+            inner.chart.dirty_indicator_panes = true;
+        }
+    }
+
+    /// Update pane weights for price + indicator panes.
+    /// Accepts parallel arrays of pane IDs and weights for JS-friendly FFI.
+    pub fn set_pane_layout(&self, price_weight: f64, pane_ids: Vec<u32>, pane_weights: Vec<f64>) {
+        let mut inner = self.inner.borrow_mut();
+        let panes: Vec<(u32, f64)> = pane_ids.into_iter().zip(pane_weights).collect();
+        inner.chart.set_pane_layout(price_weight, panes.as_slice());
     }
 
     /// Add an indicator.
@@ -2310,14 +2512,9 @@ impl ChartHandle {
         width: f64,
     ) -> u32 {
         let mut inner = self.inner.borrow_mut();
-        let id = inner.chart.add_trend_line(
-            ts1,
-            price1,
-            ts2,
-            price2,
-            color.to_string(),
-            width,
-        );
+        let id = inner
+            .chart
+            .add_trend_line(ts1, price1, ts2, price2, color.to_string(), width);
         id as u32
     }
 
@@ -2331,14 +2528,9 @@ impl ChartHandle {
         width: f64,
     ) -> u32 {
         let mut inner = self.inner.borrow_mut();
-        let id = inner.chart.add_rectangle(
-            ts1,
-            price1,
-            ts2,
-            price2,
-            color.to_string(),
-            width,
-        );
+        let id = inner
+            .chart
+            .add_rectangle(ts1, price1, ts2, price2, color.to_string(), width);
         id as u32
     }
 
@@ -2438,6 +2630,30 @@ impl ChartHandle {
         init_feeds(self.inner.clone());
     }
 
+    /// Change data provider ("alpha", "yahoo", "coinbase") and restart feeds.
+    pub fn set_provider(&self, provider: &str) {
+        let Some(norm) = normalize_provider(provider) else {
+            return;
+        };
+        {
+            let mut inner = self.inner.borrow_mut();
+            if inner.provider_override.as_deref() == Some(norm.as_str()) {
+                return;
+            }
+            inner.provider_override = Some(norm);
+            inner.feeds_live = false;
+
+            let tf = inner.base_timeframe;
+            let symbol = inner.symbol.clone();
+            inner.chart.feed_store = Rc::new(RefCell::new(FeedStore::new(symbol.clone(), tf)));
+            inner.chart.indicator_mgr = IndicatorManager::new(tf);
+            inner.chart.dirty = true;
+            inner.chart.dirty_price_panel = true;
+            inner.chart.dirty_indicator_panes = true;
+        }
+        init_feeds(self.inner.clone());
+    }
+
     /// Apply a linked view window from another chart.
     pub fn sync_view(&self, start: i64, end: i64) -> Result<(), JsValue> {
         if start >= end {
@@ -2456,8 +2672,8 @@ impl ChartHandle {
 
     /// Change timeframe and reset feeds + indicator store.
     pub fn set_timeframe(&self, timeframe: &str) -> Result<(), JsValue> {
-        let tf = TimeFrame::from_str(timeframe)
-            .ok_or_else(|| JsValue::from_str("invalid timeframe"))?;
+        let tf =
+            TimeFrame::from_str(timeframe).ok_or_else(|| JsValue::from_str("invalid timeframe"))?;
 
         {
             let mut inner = self.inner.borrow_mut();
@@ -2469,8 +2685,7 @@ impl ChartHandle {
 
             let symbol = inner.symbol.clone();
             inner.chart.timeframe = tf;
-            inner.chart.feed_store =
-                Rc::new(RefCell::new(FeedStore::new(symbol.clone(), tf)));
+            inner.chart.feed_store = Rc::new(RefCell::new(FeedStore::new(symbol.clone(), tf)));
             inner.chart.indicator_mgr = IndicatorManager::new(tf);
             inner.chart.drawings.clear();
             inner.chart.undo_stack.clear();

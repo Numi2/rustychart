@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 ts-core = { path = "../ts-core" }
-data-feed = { path = "../data-feed" }
+data-feed = { path = "../data-feed", features = ["alpha"] }
 axum = { version = "0.7", features = ["ws", "json"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -16,8 +16,11 @@ leptos = { version = "0.6", features = ["ssr"] }
 leptos_axum = { version = "0.6" }
 # Only pull in the server-side features; avoid hydrate/wasm features on backend.
 ui = { path = "../ui", default-features = false, features = ["ssr"] }
-tower-http = { version = "0.5", features = ["fs"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
 app-shell = { path = "../app-shell" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 chrono = { version = "0.4", features = ["clock"] }
+alpha-vantage-client = { path = "../alpha-vantage-client" }
+dotenvy = "0.15"
+gpu_param_sweep = { path = "../gpu_param_sweep" }
 

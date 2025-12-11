@@ -6,8 +6,16 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+alpha = ["alpha-vantage-client", "tokio", "async-stream"]
+
 [dependencies]
 ts-core = { path = "../ts-core" }
 futures-core = "0.3"
 serde = { version = "1", features = ["derive"] }
+futures-util = "0.3"
+async-stream = { version = "0.3", optional = true }
+tokio = { version = "1", default-features = false, features = ["time"], optional = true }
+alpha-vantage-client = { path = "../alpha-vantage-client", optional = true }
 

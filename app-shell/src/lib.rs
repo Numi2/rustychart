@@ -7,8 +7,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
-#[cfg(target_arch = "wasm32")]
-use std::str::FromStr;
 
 #[cfg(target_arch = "wasm32")]
 use chart_frontend::ChartHandle;
@@ -78,7 +76,68 @@ pub struct AlertState {
     pub fired: bool,
 }
 
+/// Describes a separate indicator pane stacked under the price pane.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaneConfig {
+    pub id: u32,
+    pub title: String,
+    /// Relative height; interpreted as flex weight.
+    pub weight: f32,
+}
+
+impl Default for PaneConfig {
+    fn default() -> Self {
+        Self {
+            id: 1,
+            title: "Pane 1".into(),
+            weight: 1.0,
+        }
+    }
+}
+
 /// Per-chart configuration: symbol, timeframe, indicators, drawings.
+fn default_pane() -> u8 {
+    0
+}
+
+fn default_pane_height() -> f32 {
+    1.0
+}
+
+fn default_price_weight() -> f32 {
+    1.0
+}
+
+fn default_pane_layout() -> Vec<PaneConfig> {
+    Vec::new()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum InputKind {
+    Slider { min: f32, max: f32, step: f32 },
+    Toggle,
+    Select { options: Vec<String> },
+}
+
+impl Default for InputKind {
+    fn default() -> Self {
+        Self::Slider {
+            min: 0.0,
+            max: 1.0,
+            step: 0.1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ChartInput {
+    pub id: String,
+    pub label: String,
+    pub value: String,
+    #[serde(default)]
+    pub kind: InputKind,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChartState {
     pub id: u32,
@@ -91,6 +150,21 @@ pub struct ChartState {
     pub orders: Vec<OrderState>,
     pub positions: Vec<OrderState>,
     pub alerts: Vec<AlertState>,
+    /// Weight of the price pane when stacking indicator panes.
+    #[serde(default = "default_price_weight")]
+    pub price_pane_weight: f32,
+    /// Optional explicit pane layout (for future flexibility).
+    #[serde(default = "default_pane_layout")]
+    pub pane_layout: Vec<PaneConfig>,
+    /// Logical pane index for multi-pane layouts (0 = first).
+    #[serde(default = "default_pane")]
+    pub pane: u8,
+    /// Relative height of the pane; interpreted as CSS fr units.
+    #[serde(default = "default_pane_height")]
+    pub height_ratio: f32,
+    /// Custom inputs bound to scripts/overlays.
+    #[serde(default)]
+    pub inputs: Vec<ChartInput>,
 }
 
 /// Layout type: single or grid.
@@ -111,8 +185,12 @@ pub struct LayoutState {
 /// Global app state.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppState {
+    // Default missing fields so older/sparse payloads don't 422 on the backend.
+    #[serde(default)]
     pub theme: Theme,
+    #[serde(default)]
     pub layouts: Vec<LayoutState>,
+    #[serde(default)]
     pub active_layout_id: Option<u32>,
 }
 
@@ -258,8 +336,10 @@ pub async fn load_state_from_backend(
     if !resp.ok() {
         return Err(JsValue::from_str("backend load failed"));
     }
-    let state: AppState =
-        resp.json().await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let state: AppState = resp
+        .json()
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(Some(state))
 }
 
@@ -268,10 +348,25 @@ pub async fn load_state_from_backend(
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
+#[allow(dead_code)]
 enum ChartEvent {
-    Click { x: f64, y: f64, ts: i64, price: f64, button: i16 },
-    CrosshairMove { x: f64, y: f64, ts: i64, price: f64 },
-    ViewChanged { start: i64, end: i64 },
+    Click {
+        x: f64,
+        y: f64,
+        ts: i64,
+        price: f64,
+        button: i16,
+    },
+    CrosshairMove {
+        x: f64,
+        y: f64,
+        ts: i64,
+        price: f64,
+    },
+    ViewChanged {
+        start: i64,
+        end: i64,
+    },
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -311,10 +406,7 @@ fn create_canvas(container: &HtmlDivElement, id: &str) -> Result<HtmlCanvasEleme
         .dyn_into::<HtmlCanvasElement>()
         .map_err(|_| JsValue::from_str("not a canvas"))?;
     canvas.set_id(id);
-    canvas
-        .style()
-        .set_property("width", "100%")
-        .expect("style");
+    canvas.style().set_property("width", "100%").expect("style");
     canvas
         .style()
         .set_property("height", "100%")
@@ -388,6 +480,7 @@ fn apply_drawings(handle: &ChartHandle, drawings: &[DrawingState]) {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 fn apply_orders(handle: &ChartHandle, orders: &[OrderState]) {
     if let Ok(json) = serde_json::to_string(orders) {
         let _ = handle.set_orders(&json);
@@ -395,6 +488,7 @@ fn apply_orders(handle: &ChartHandle, orders: &[OrderState]) {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 fn apply_positions(handle: &ChartHandle, positions: &[OrderState]) {
     if let Ok(json) = serde_json::to_string(positions) {
         let _ = handle.set_positions(&json);
@@ -402,6 +496,7 @@ fn apply_positions(handle: &ChartHandle, positions: &[OrderState]) {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 fn apply_alerts(handle: &ChartHandle, alerts: &[AlertState]) {
     if let Ok(json) = serde_json::to_string(alerts) {
         let _ = handle.set_alerts(&json);
@@ -438,9 +533,7 @@ impl UiShell {
                                     if *other_id == chart_id {
                                         continue;
                                     }
-                                    if groups
-                                        .get(other_id)
-                                        .and_then(|g| g.clone())
+                                    if groups.get(other_id).and_then(|g| g.clone())
                                         == Some(group.clone())
                                     {
                                         other_handle.show_crosshair(ts, price);
@@ -455,9 +548,7 @@ impl UiShell {
                                     if *other_id == chart_id {
                                         continue;
                                     }
-                                    if groups
-                                        .get(other_id)
-                                        .and_then(|g| g.clone())
+                                    if groups.get(other_id).and_then(|g| g.clone())
                                         == Some(group.clone())
                                     {
                                         let _ = other_handle.sync_view(start, end);
@@ -495,6 +586,11 @@ impl UiShell {
                     orders: Vec::new(),
                     positions: Vec::new(),
                     alerts: Vec::new(),
+                    price_pane_weight: 1.0,
+                    pane_layout: Vec::new(),
+                    pane: 0,
+                    height_ratio: 1.0,
+                    inputs: Vec::new(),
                 }],
             });
 
@@ -511,14 +607,8 @@ impl UiShell {
                 .create_element("div")?
                 .dyn_into::<HtmlDivElement>()
                 .map_err(|_| JsValue::from_str("div cast failed"))?;
-            container
-                .style()
-                .set_property("position", "relative")
-                .ok();
-            container
-                .style()
-                .set_property("min-height", "200px")
-                .ok();
+            container.style().set_property("position", "relative").ok();
+            container.style().set_property("min-height", "200px").ok();
             let canvas_id = format!("chart-canvas-{}", chart_state.id);
             let canvas = create_canvas(&container, &canvas_id)?;
             self.root.append_child(&container)?;
@@ -570,8 +660,7 @@ impl UiShell {
             .dyn_into::<HtmlElement>()
             .map_err(|_| JsValue::from_str("root is not HTMLElement"))?;
 
-        let initial = load_state_from_local_storage(persist_key)?
-            .unwrap_or_else(AppState::default);
+        let initial = load_state_from_local_storage(persist_key)?.unwrap_or_else(AppState::default);
 
         let mut shell = UiShell {
             state_store: StateStore::new(initial),
@@ -636,7 +725,14 @@ impl UiShell {
     /// Mutate a chart's symbol/timeframe and mirror to ChartHandle + state.
     #[wasm_bindgen]
     pub fn set_chart_symbol(&mut self, chart_id: u32, symbol: &str) -> Result<(), JsValue> {
-        if let Some(chart) = self.state_store.state_mut().layouts.iter_mut().flat_map(|l| l.charts.iter_mut()).find(|c| c.id == chart_id) {
+        if let Some(chart) = self
+            .state_store
+            .state_mut()
+            .layouts
+            .iter_mut()
+            .flat_map(|l| l.charts.iter_mut())
+            .find(|c| c.id == chart_id)
+        {
             chart.symbol = symbol.to_string();
         }
         if let Some(handle) = self.charts.borrow().get(&chart_id) {
@@ -648,7 +744,14 @@ impl UiShell {
 
     #[wasm_bindgen]
     pub fn set_chart_timeframe(&mut self, chart_id: u32, timeframe: &str) -> Result<(), JsValue> {
-        if let Some(chart) = self.state_store.state_mut().layouts.iter_mut().flat_map(|l| l.charts.iter_mut()).find(|c| c.id == chart_id) {
+        if let Some(chart) = self
+            .state_store
+            .state_mut()
+            .layouts
+            .iter_mut()
+            .flat_map(|l| l.charts.iter_mut())
+            .find(|c| c.id == chart_id)
+        {
             chart.timeframe = timeframe.to_string();
         }
         if let Some(handle) = self.charts.borrow().get(&chart_id) {
@@ -660,10 +763,21 @@ impl UiShell {
 
     /// Replace indicator configs for a chart and mirror to handle.
     #[wasm_bindgen]
-    pub fn set_chart_indicators(&mut self, chart_id: u32, configs_json: &str) -> Result<(), JsValue> {
+    pub fn set_chart_indicators(
+        &mut self,
+        chart_id: u32,
+        configs_json: &str,
+    ) -> Result<(), JsValue> {
         let configs: Vec<IndicatorConfig> =
             serde_json::from_str(configs_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        if let Some(chart) = self.state_store.state_mut().layouts.iter_mut().flat_map(|l| l.charts.iter_mut()).find(|c| c.id == chart_id) {
+        if let Some(chart) = self
+            .state_store
+            .state_mut()
+            .layouts
+            .iter_mut()
+            .flat_map(|l| l.charts.iter_mut())
+            .find(|c| c.id == chart_id)
+        {
             chart.indicators = configs.clone();
         }
         if let Some(handle) = self.charts.borrow().get(&chart_id) {
@@ -675,10 +789,21 @@ impl UiShell {
 
     /// Replace drawings for a chart (used after undo/redo or external edit).
     #[wasm_bindgen]
-    pub fn set_chart_drawings(&mut self, chart_id: u32, drawings_json: &str) -> Result<(), JsValue> {
+    pub fn set_chart_drawings(
+        &mut self,
+        chart_id: u32,
+        drawings_json: &str,
+    ) -> Result<(), JsValue> {
         let drawings: Vec<DrawingState> =
             serde_json::from_str(drawings_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        if let Some(chart) = self.state_store.state_mut().layouts.iter_mut().flat_map(|l| l.charts.iter_mut()).find(|c| c.id == chart_id) {
+        if let Some(chart) = self
+            .state_store
+            .state_mut()
+            .layouts
+            .iter_mut()
+            .flat_map(|l| l.charts.iter_mut())
+            .find(|c| c.id == chart_id)
+        {
             chart.drawings = drawings.clone();
         }
         if let Some(handle) = self.charts.borrow().get(&chart_id) {
@@ -702,21 +827,28 @@ mod tests {
     #[test]
     fn undo_redo_restores_state() {
         let mut store = StateStore::with_default();
-        store.mutate(|s| s.layouts.push(LayoutState {
-            id: 1,
-            kind: LayoutKind::Single,
-            charts: vec![ChartState {
+        store.mutate(|s| {
+            s.layouts.push(LayoutState {
                 id: 1,
-                symbol: "TEST".into(),
-                timeframe: "1m".into(),
-                indicators: Vec::new(),
-                drawings: Vec::new(),
-                link_group: None,
-                orders: Vec::new(),
-                positions: Vec::new(),
-                alerts: Vec::new(),
-            }],
-        }));
+                kind: LayoutKind::Single,
+                charts: vec![ChartState {
+                    id: 1,
+                    symbol: "TEST".into(),
+                    timeframe: "1m".into(),
+                    indicators: Vec::new(),
+                    drawings: Vec::new(),
+                    link_group: None,
+                    orders: Vec::new(),
+                    positions: Vec::new(),
+                    alerts: Vec::new(),
+                    price_pane_weight: 1.0,
+                    pane_layout: Vec::new(),
+                    pane: 0,
+                    height_ratio: 1.0,
+                    inputs: Vec::new(),
+                }],
+            })
+        });
         assert_eq!(store.state().layouts.len(), 1);
         store.undo();
         assert!(store.state().layouts.is_empty());
@@ -739,5 +871,26 @@ mod tests {
         let decoded: AppState = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.active_layout_id, Some(7));
         assert_eq!(decoded.layouts.len(), 1);
+    }
+
+    #[test]
+    fn chart_state_backfills_defaults() {
+        let legacy = r#"{
+            "id": 9,
+            "symbol": "LEGACY",
+            "timeframe": "1m",
+            "indicators": [],
+            "drawings": [],
+            "link_group": null,
+            "orders": [],
+            "positions": [],
+            "alerts": []
+        }"#;
+        let parsed: ChartState = serde_json::from_str(legacy).expect("deserialize legacy chart");
+        assert_eq!(parsed.pane, 0);
+        assert_eq!(parsed.price_pane_weight, 1.0);
+        assert!(parsed.pane_layout.is_empty());
+        assert!(parsed.inputs.is_empty());
+        assert!((parsed.height_ratio - 1.0).abs() < f32::EPSILON);
     }
 }

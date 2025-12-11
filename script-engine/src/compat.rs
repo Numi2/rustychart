@@ -3,18 +3,15 @@ use serde::{Deserialize, Serialize};
 use crate::language::SourceLang;
 use crate::{manifest::Manifest, parser, ScriptSpec};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum IssueSeverity {
-    Info,
-    Warning,
-    Error,
-}
+pub use crate::language::{DiagnosticCode, IssueSeverity, SourceSpan};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompatibilityIssue {
+    pub code: DiagnosticCode,
     pub message: String,
     pub severity: IssueSeverity,
-    pub location: Option<(usize, usize)>,
+    pub span: Option<SourceSpan>,
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

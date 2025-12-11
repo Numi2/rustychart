@@ -16,7 +16,7 @@ mod server {
             .leptos_routes(&leptos_options, routes, App)
             .with_state(leptos_options);
 
-        println!("UI server listening on http://{}", addr);
+        println!("UI server listening on http://{addr}");
         axum::serve(
             tokio::net::TcpListener::bind(addr).await.expect("bind"),
             app.into_make_service(),

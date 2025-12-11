@@ -84,8 +84,7 @@ impl IncrementalRunner {
     ///
     /// This allows both "full history" and "append-only" calling patterns without duplication.
     pub fn apply_delta(&mut self, candles: &[Candle]) -> Vec<ScriptResult> {
-        let mut results = Vec::new();
-
+        let mut results = Vec::with_capacity(candles.len().saturating_sub(self.checkpoint.last_bar_index));
         // If callers provide the full history again, skip the prefix we already processed.
         // If they provide only the newly appended bars, process them all.
         let processed_so_far = self.checkpoint.last_bar_index;

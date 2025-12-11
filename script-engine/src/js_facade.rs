@@ -134,9 +134,11 @@ pub fn validate_script(
             source_lang: lang,
             supported: false,
             issues: vec![compat::CompatibilityIssue {
+                code: crate::language::DiagnosticCode::SerializationFailed,
                 message: "Serialization failed".to_string(),
-                severity: compat::IssueSeverity::Error,
-                location: None,
+                severity: crate::language::IssueSeverity::Error,
+                span: None,
+                hint: Some("This is unexpected; please retry or contact support".to_string()),
             }],
         })?;
     Ok((artifact, translation.report))

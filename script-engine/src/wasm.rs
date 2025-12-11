@@ -43,6 +43,11 @@ impl<'a, H: HostEnvironment> WasmSandbox<'a, H> {
         Ok(self.adapter.on_candle(candle))
     }
 
+    /// Reset fuel to configured maximum; host-controlled.
+    pub fn reset_fuel(&mut self) {
+        self.fuel_left = self.limits.max_fuel;
+    }
+
     pub fn fuel_left(&self) -> u64 {
         self.fuel_left
     }

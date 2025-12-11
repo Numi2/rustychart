@@ -1,49 +1,33 @@
 use crate::state::use_app_ctx;
 #[cfg(target_arch = "wasm32")]
-use app_shell::{AlertState, DrawingKind, DrawingState, OrderState};
+use crate::state::{use_link_bus, LinkCrosshair, LinkView};
+use app_shell::{ChartInput, InputKind, PaneConfig};
+#[cfg(target_arch = "wasm32")]
+use app_shell::{DrawingKind, DrawingState};
 #[cfg(not(target_arch = "wasm32"))]
 use app_shell::{DrawingKind, DrawingState};
-#[cfg(target_arch = "wasm32")]
-use crate::state::{use_link_bus, LinkCrosshair, LinkView};
-use leptos::*;
+use leptos::{event_target_checked, event_target_value, *};
 use ta_engine::{IndicatorConfig, IndicatorKind, IndicatorParams, OutputKind, SourceField};
 
 #[cfg(target_arch = "wasm32")]
 use chart_frontend::ChartHandle;
 #[cfg(target_arch = "wasm32")]
+use gloo_timers::future::TimeoutFuture;
+#[cfg(target_arch = "wasm32")]
+use serde::Deserialize;
+#[cfg(target_arch = "wasm32")]
+use serde_json;
+#[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
-use serde_json;
-#[cfg(target_arch = "wasm32")]
-use serde::Deserialize;
-#[cfg(target_arch = "wasm32")]
-use js_sys::Date;
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
-use gloo_timers::future::TimeoutFuture;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(target_arch = "wasm32")]
 type HandleSignal = RwSignal<Option<Rc<ChartHandle>>>;
 #[cfg(not(target_arch = "wasm32"))]
 type HandleSignal = ();
-
-#[cfg(target_arch = "wasm32")]
-fn now_ms() -> i64 {
-    Date::now() as i64
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
 
 #[cfg(target_arch = "wasm32")]
 fn apply_indicators(handle: &ChartHandle, indicators: &[ta_engine::IndicatorConfig]) {
@@ -53,6 +37,13 @@ fn apply_indicators(handle: &ChartHandle, indicators: &[ta_engine::IndicatorConf
             let _ = handle.add_indicator_from_config(&json);
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn apply_panes(handle: &ChartHandle, chart: &app_shell::ChartState) {
+    let pane_ids: Vec<u32> = chart.pane_layout.iter().map(|p| p.id).collect();
+    let pane_weights: Vec<f64> = chart.pane_layout.iter().map(|p| p.weight as f64).collect();
+    handle.set_pane_layout(chart.price_pane_weight as f64, pane_ids, pane_weights);
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -81,33 +72,31 @@ fn apply_drawings(handle: &ChartHandle, drawings: &[DrawingState]) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn apply_orders(handle: &ChartHandle, orders: &[OrderState], positions: &[OrderState], alerts: &[AlertState]) {
-    if let Ok(json) = serde_json::to_string(orders) {
-        let _ = handle.set_orders(&json);
-    }
-    if let Ok(json) = serde_json::to_string(positions) {
-        let _ = handle.set_positions(&json);
-    }
-    if let Ok(json) = serde_json::to_string(alerts) {
-        let _ = handle.set_alerts(&json);
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
 #[derive(Deserialize)]
 #[serde(tag = "type")]
+#[allow(dead_code)]
 enum ChartEventPayload {
-    CrosshairMove { ts: i64, price: f64, x: f64, y: f64 },
-    ViewChanged { start: i64, end: i64 },
-    Click { x: f64, y: f64, ts: i64, price: f64, button: i16 },
+    CrosshairMove {
+        ts: i64,
+        price: f64,
+        x: f64,
+        y: f64,
+    },
+    ViewChanged {
+        start: i64,
+        end: i64,
+    },
+    Click {
+        x: f64,
+        y: f64,
+        ts: i64,
+        price: f64,
+        button: i16,
+    },
 }
 
 #[component]
-pub fn ChartView(
-    chart_id: u32,
-    http_base: String,
-    ws_base: String,
-) -> impl IntoView {
+pub fn ChartView(chart_id: u32, http_base: String, ws_base: String) -> impl IntoView {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (&http_base, &ws_base);
     let canvas_id = format!("chart-canvas-{chart_id}");
@@ -117,8 +106,8 @@ pub fn ChartView(
     #[cfg(not(target_arch = "wasm32"))]
     let _bus = ();
     let app_ctx = use_app_ctx();
-    let (symbol, set_symbol) = create_signal(String::from("…"));
-    let (timeframe, set_timeframe) = create_signal(String::from("…"));
+    let (symbol, set_symbol) = create_signal(String::from("..."));
+    let (timeframe, set_timeframe) = create_signal(String::from("..."));
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (&set_symbol, &set_timeframe);
 
@@ -127,11 +116,9 @@ pub fn ChartView(
     #[cfg(not(target_arch = "wasm32"))]
     let _handle: HandleSignal = ();
     #[cfg(target_arch = "wasm32")]
-    let last_cross = create_rw_signal::<Option<i64>>(None);
+    let last_cross = create_rw_signal::<Option<(i64, f64)>>(None);
     #[cfg(target_arch = "wasm32")]
     let last_view = create_rw_signal::<Option<(i64, i64)>>(None);
-    #[cfg(not(target_arch = "wasm32"))]
-    let handle: HandleSignal = ();
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -167,7 +154,9 @@ pub fn ChartView(
                     .find(|c| c.id == chart_id)
                     .cloned()
             });
-            let Some(chart_state) = initial else { return; };
+            let Some(chart_state) = initial else {
+                return;
+            };
             set_symbol.set(chart_state.symbol.clone());
             set_timeframe.set(chart_state.timeframe.clone());
             let symbol = chart_state.symbol.clone();
@@ -176,50 +165,51 @@ pub fn ChartView(
             if let Ok(h) = chart {
                 h.set_symbol(&symbol);
                 let _ = h.set_timeframe(&tf);
+                apply_panes(&h, &chart_state);
                 apply_indicators(&h, &chart_state.indicators);
                 apply_drawings(&h, &chart_state.drawings);
-                apply_orders(&h, &chart_state.orders, &chart_state.positions, &chart_state.alerts);
                 let cb_bus_cross = bus_cross.clone();
                 let cb_bus_view = bus_view.clone();
                 let cb_link_group = link_group.clone();
                 let cb_chart_id = chart_id;
                 let cb_last_cross = last_cross;
                 let cb_last_view = last_view;
-                let callback = Closure::<dyn FnMut(JsValue)>::wrap(Box::new(move |val: JsValue| {
-                    if let Some(txt) = val.as_string() {
-                        if let Ok(ev) = serde_json::from_str::<ChartEventPayload>(&txt) {
-                            match ev {
-                                ChartEventPayload::CrosshairMove { ts, price, .. } => {
-                                    let last = cb_last_cross.get_untracked();
-                                    if last == Some(ts) {
-                                        return;
+                let callback =
+                    Closure::<dyn FnMut(JsValue)>::wrap(Box::new(move |val: JsValue| {
+                        if let Some(txt) = val.as_string() {
+                            if let Ok(ev) = serde_json::from_str::<ChartEventPayload>(&txt) {
+                                match ev {
+                                    ChartEventPayload::CrosshairMove { ts, price, .. } => {
+                                        let last = cb_last_cross.get_untracked();
+                                        if last.map(|(t, _)| t) == Some(ts) {
+                                            return;
+                                        }
+                                        cb_last_cross.set(Some((ts, price)));
+                                        cb_bus_cross.set(Some(LinkCrosshair {
+                                            chart_id: cb_chart_id,
+                                            link_group: cb_link_group.clone(),
+                                            ts,
+                                            price,
+                                        }));
                                     }
-                                    cb_last_cross.set(Some(ts));
-                                    cb_bus_cross.set(Some(LinkCrosshair {
-                                        chart_id: cb_chart_id,
-                                        link_group: cb_link_group.clone(),
-                                        ts,
-                                        price,
-                                    }));
-                                }
-                                ChartEventPayload::ViewChanged { start, end } => {
-                                    let last = cb_last_view.get_untracked();
-                                    if last == Some((start, end)) {
-                                        return;
+                                    ChartEventPayload::ViewChanged { start, end } => {
+                                        let last = cb_last_view.get_untracked();
+                                        if last == Some((start, end)) {
+                                            return;
+                                        }
+                                        cb_last_view.set(Some((start, end)));
+                                        cb_bus_view.set(Some(LinkView {
+                                            chart_id: cb_chart_id,
+                                            link_group: cb_link_group.clone(),
+                                            start,
+                                            end,
+                                        }));
                                     }
-                                    cb_last_view.set(Some((start, end)));
-                                    cb_bus_view.set(Some(LinkView {
-                                        chart_id: cb_chart_id,
-                                        link_group: cb_link_group.clone(),
-                                        start,
-                                        end,
-                                    }));
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
-                    }
-                }));
+                    }));
                 let _ = h.subscribe_events(callback.as_ref().unchecked_ref());
                 callback.forget();
                 handle.set(Some(Rc::new(h)));
@@ -298,9 +288,9 @@ pub fn ChartView(
                     set_timeframe.set(chart.timeframe.clone());
                     let _ = h.set_timeframe(&chart.timeframe);
                     h.set_symbol(&chart.symbol);
+                    apply_panes(&h, &chart);
                     apply_indicators(&h, &chart.indicators);
                     apply_drawings(&h, &chart.drawings);
-                    apply_orders(&h, &chart.orders, &chart.positions, &chart.alerts);
                 }
             });
         }
@@ -312,20 +302,10 @@ pub fn ChartView(
         });
     }
 
-    let add_indicator = {
+    // Utilities to read/update this chart state.
+    let update_chart = {
         let store = app_ctx.store;
-        #[cfg(target_arch = "wasm32")]
-        let handle = handle.clone();
-        move |_| {
-            let cfg = IndicatorConfig::with_default_styles(
-                IndicatorKind::Sma,
-                IndicatorParams::Sma {
-                    period: 20,
-                    source: SourceField::Close,
-                },
-                OutputKind::Overlay,
-                None,
-            );
+        move |f: &mut dyn FnMut(&mut app_shell::ChartState)| {
             store.update(|s| {
                 if let Some(chart) = s
                     .state_mut()
@@ -334,8 +314,99 @@ pub fn ChartView(
                     .flat_map(|l| l.charts.iter_mut())
                     .find(|c| c.id == chart_id)
                 {
-                    chart.indicators.push(cfg.clone());
+                    f(chart);
                 }
+            });
+        }
+    };
+
+    let pane_layout = {
+        let store = app_ctx.store;
+        create_memo(move |_| {
+            store
+                .with(|s| {
+                    s.state()
+                        .layouts
+                        .iter()
+                        .flat_map(|l| l.charts.iter())
+                        .find(|c| c.id == chart_id)
+                        .map(|c| c.pane_layout.clone())
+                })
+                .unwrap_or_default()
+        })
+    };
+    let price_weight = {
+        let store = app_ctx.store;
+        create_memo(move |_| {
+            store
+                .with(|s| {
+                    s.state()
+                        .layouts
+                        .iter()
+                        .flat_map(|l| l.charts.iter())
+                        .find(|c| c.id == chart_id)
+                        .map(|c| c.price_pane_weight)
+                })
+                .unwrap_or(1.0)
+        })
+    };
+    let input_specs = {
+        let store = app_ctx.store;
+        create_memo(move |_| {
+            store
+                .with(|s| {
+                    s.state()
+                        .layouts
+                        .iter()
+                        .flat_map(|l| l.charts.iter())
+                        .find(|c| c.id == chart_id)
+                        .map(|c| c.inputs.clone())
+                })
+                .unwrap_or_default()
+        })
+    };
+
+    let (indicator_output, set_indicator_output) = create_signal(OutputKind::Overlay);
+    let (indicator_pane, set_indicator_pane) = create_signal::<Option<u32>>(None);
+    {
+        let panes = pane_layout;
+        let indicator_output = indicator_output;
+        let indicator_pane = indicator_pane;
+        let set_indicator_pane = set_indicator_pane;
+        create_effect(move |_| {
+            if indicator_output.get() == OutputKind::SeparatePane && indicator_pane.get().is_none()
+            {
+                set_indicator_pane.set(panes.get().first().map(|p| p.id));
+            }
+        });
+    }
+
+    let add_indicator = {
+        #[cfg(target_arch = "wasm32")]
+        let handle = handle.clone();
+        let pane_layout = pane_layout.clone();
+        let indicator_output = indicator_output;
+        let indicator_pane = indicator_pane;
+        move |_| {
+            let target_output = indicator_output.get();
+            let target_pane = if target_output == OutputKind::SeparatePane {
+                indicator_pane
+                    .get()
+                    .or_else(|| pane_layout.get().first().map(|p| p.id))
+            } else {
+                None
+            };
+            let cfg = IndicatorConfig::with_default_styles(
+                IndicatorKind::Sma,
+                IndicatorParams::Sma {
+                    period: 20,
+                    source: SourceField::Close,
+                },
+                target_output,
+                target_pane,
+            );
+            update_chart(&mut |chart| {
+                chart.indicators.push(cfg.clone());
             });
             #[cfg(target_arch = "wasm32")]
             if let Some(h) = handle.get() {
@@ -350,7 +421,12 @@ pub fn ChartView(
         let store = app_ctx.store;
         #[cfg(target_arch = "wasm32")]
         let handle = handle.clone();
+        #[cfg(target_arch = "wasm32")]
+        let last_cross = last_cross.clone();
         move |_| {
+            #[cfg(target_arch = "wasm32")]
+            let price = last_cross.get().map(|(_, p)| p).unwrap_or(100.0);
+            #[cfg(not(target_arch = "wasm32"))]
             let price = 100.0;
             #[cfg(target_arch = "wasm32")]
             let new_id = handle
@@ -391,7 +467,12 @@ pub fn ChartView(
         let store = app_ctx.store;
         #[cfg(target_arch = "wasm32")]
         let handle = handle.clone();
+        #[cfg(target_arch = "wasm32")]
+        let last_cross = last_cross.clone();
         move |_| {
+            #[cfg(target_arch = "wasm32")]
+            let ts = last_cross.get().map(|(t, _)| t).unwrap_or(0_i64);
+            #[cfg(not(target_arch = "wasm32"))]
             let ts = 0_i64;
             #[cfg(target_arch = "wasm32")]
             let new_id = handle
@@ -428,166 +509,268 @@ pub fn ChartView(
         }
     };
 
-    view! {
-        <div class="chart-cell">
-            <div class="chart-header">
-                <div class="flex-row">
-                    <span class="chip">{move || symbol.get()}</span>
-                    <span class="chip">{move || timeframe.get()}</span>
-                </div>
-                <div class="flex-row" style="gap: 6px;">
-                    <button aria-label="Add indicator" on:click=add_indicator>+Ind</button>
-                    <button aria-label="Add H-line" on:click=add_hline>H</button>
-                    <button aria-label="Add V-line" on:click=add_vline>V</button>
-                    <button aria-label="Undo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.undo(); } }>Undo</button>
-                    <button aria-label="Redo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.redo(); } }>Redo</button>
-                </div>
-            </div>
-            <canvas _ref=_node_ref id=canvas_id class="chart-canvas"></canvas>
-            <OrderForm chart_id=chart_id handle=handle_signal(handle) />
-        </div>
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn handle_signal(sig: HandleSignal) -> HandleSignal {
-    sig
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn handle_signal(_: HandleSignal) -> HandleSignal {
-}
-
-#[component]
-fn OrderForm(chart_id: u32, handle: HandleSignal) -> impl IntoView {
-    let app_ctx = use_app_ctx();
-    let (price, set_price) = create_signal(100.0_f64);
-    let (qty, set_qty) = create_signal(1.0_f64);
-    let (label, set_label) = create_signal(String::from("Order"));
-    let (alert_price, set_alert_price) = create_signal(100.0_f64);
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = &handle;
-
-    #[cfg(target_arch = "wasm32")]
-    let flush_handle = {
+    let add_pane = {
         let store = app_ctx.store;
-        move || {
-            if let Some(h) = handle.get() {
-                if let Some(chart) = store.with(|s| {
-                    s.state()
-                        .layouts
-                        .iter()
-                        .flat_map(|l| l.charts.iter())
-                        .find(|c| c.id == chart_id)
-                        .cloned()
-                }) {
-                    apply_orders(&h, &chart.orders, &chart.positions, &chart.alerts);
+        let set_indicator_pane = set_indicator_pane;
+        move |_| {
+            let mut new_id: Option<u32> = None;
+            store.update(|s| {
+                if let Some(chart) = s
+                    .state_mut()
+                    .layouts
+                    .iter_mut()
+                    .flat_map(|l| l.charts.iter_mut())
+                    .find(|c| c.id == chart_id)
+                {
+                    let next_id = chart.pane_layout.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+                    chart.pane_layout.push(PaneConfig {
+                        id: next_id,
+                        title: format!("Pane {}", next_id),
+                        weight: 1.0,
+                    });
+                    new_id = Some(next_id);
                 }
+            });
+            if let Some(id) = new_id {
+                set_indicator_pane.set(Some(id));
             }
         }
     };
-    #[cfg(not(target_arch = "wasm32"))]
-    let flush_handle = || {};
 
-    let add_order = move |_| {
-        let now = now_ms();
-        let price = price.get();
-        let qty = qty.get();
-        let label_val = label.get();
-        app_ctx.store.update(|s| {
-            if let Some(chart) = s
-                .state_mut()
-                .layouts
-                .iter_mut()
-                .flat_map(|l| l.charts.iter_mut())
-                .find(|c| c.id == chart_id)
-            {
-                chart.orders.push(app_shell::OrderState {
-                    id: format!("ord-{now}"),
-                    side: "buy".into(),
-                    price,
-                    qty,
-                    label: label_val.clone(),
-                    stop_price: None,
-                    take_profit_price: None,
-                });
-            }
-        });
-        flush_handle();
+    let remove_pane = {
+        let store = app_ctx.store;
+        move |pane_id: u32| {
+            store.update(|s| {
+                if let Some(chart) = s
+                    .state_mut()
+                    .layouts
+                    .iter_mut()
+                    .flat_map(|l| l.charts.iter_mut())
+                    .find(|c| c.id == chart_id)
+                {
+                    chart.pane_layout.retain(|p| p.id != pane_id);
+                    for ind in chart.indicators.iter_mut() {
+                        if ind.pane_id == Some(pane_id) {
+                            ind.pane_id = None;
+                            ind.output = OutputKind::Overlay;
+                        }
+                    }
+                }
+            });
+        }
     };
 
-    let add_position = move |_| {
-        let now = now_ms();
-        let price = price.get();
-        let qty = qty.get();
-        let label_val = label.get();
-        app_ctx.store.update(|s| {
-            if let Some(chart) = s
-                .state_mut()
-                .layouts
-                .iter_mut()
-                .flat_map(|l| l.charts.iter_mut())
-                .find(|c| c.id == chart_id)
-            {
-                chart.positions.push(app_shell::OrderState {
-                    id: format!("pos-{now}"),
-                    side: "long".into(),
-                    price,
-                    qty,
-                    label: label_val.clone(),
-                    stop_price: None,
-                    take_profit_price: None,
-                });
-            }
-        });
-        flush_handle();
+    let set_pane_weight = {
+        let store = app_ctx.store;
+        move |pane_id: u32, weight: f64| {
+            store.update(|s| {
+                if let Some(chart) = s
+                    .state_mut()
+                    .layouts
+                    .iter_mut()
+                    .flat_map(|l| l.charts.iter_mut())
+                    .find(|c| c.id == chart_id)
+                {
+                    if pane_id == 0 {
+                        chart.price_pane_weight = weight as f32;
+                    } else if let Some(pane) =
+                        chart.pane_layout.iter_mut().find(|p| p.id == pane_id)
+                    {
+                        pane.weight = weight as f32;
+                    }
+                }
+            });
+        }
     };
 
-    let add_alert = move |_| {
-        let now = now_ms();
-        let price_val = alert_price.get();
-        let label_val = label.get();
-        app_ctx.store.update(|s| {
-            if let Some(chart) = s
-                .state_mut()
-                .layouts
-                .iter_mut()
-                .flat_map(|l| l.charts.iter_mut())
-                .find(|c| c.id == chart_id)
-            {
-                chart.alerts.push(app_shell::AlertState {
-                    id: format!("al-{now}"),
-                    ts: now,
-                    price: Some(price_val),
-                    label: label_val.clone(),
-                    fired: false,
-                });
-            }
-        });
-        flush_handle();
+    let update_input_value = {
+        let store = app_ctx.store;
+        move |input_id: String, value: String| {
+            store.update(|s| {
+                if let Some(chart) = s
+                    .state_mut()
+                    .layouts
+                    .iter_mut()
+                    .flat_map(|l| l.charts.iter_mut())
+                    .find(|c| c.id == chart_id)
+                {
+                    if let Some(input) = chart.inputs.iter_mut().find(|i| i.id == input_id) {
+                        input.value = value.clone();
+                    }
+                }
+            });
+        }
     };
+
+    let (scale_mode, set_scale_mode) = create_signal("Linear".to_string());
 
     view! {
-        <div class="panel" style="padding: var(--space-2); border-top: 1px solid var(--border);">
-            <div class="section-label">Trading</div>
-            <div class="flex-row" style="gap:8px;">
-                <input type="number" step="0.1" value=move || price.get() on:input=move |ev| {
-                    if let Ok(v) = event_target_value(&ev).parse::<f64>() { set_price.set(v); }
-                }/>
-                <input type="number" step="0.1" value=move || qty.get() on:input=move |ev| {
-                    if let Ok(v) = event_target_value(&ev).parse::<f64>() { set_qty.set(v); }
-                }/>
-                <input type="text" value=move || label.get() on:input=move |ev| set_label.set(event_target_value(&ev)) />
+        <div class="chart-cell">
+            <div class="chart-banner">
+                <div class="pill-row">
+                    <span class="pill pill-strong">{move || symbol.get()}</span>
+                    <span class="pill pill-soft">{move || timeframe.get()}</span>
+                </div>
+                <div class="chart-tools">
+                    <button class="btn ghost" aria-label="Undo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.undo(); } }>Undo</button>
+                    <button class="btn ghost" aria-label="Redo" on:click=move |_| { #[cfg(target_arch = "wasm32")] if let Some(h)=handle.get(){ h.redo(); } }>Redo</button>
+                    <button class="btn ghost" aria-label="Add indicator" on:click=add_indicator>+Ind</button>
+                    <button class="btn ghost" aria-label="Add H-line" on:click=add_hline>H</button>
+                    <button class="btn ghost" aria-label="Add V-line" on:click=add_vline>V</button>
+                    <button class="btn ghost" aria-label="Toggle scale" on:click=move |_| {
+                        let next = if scale_mode.get() == "Linear" { "Log".to_string() } else { "Linear".to_string() };
+                        let mode = next.clone();
+                        set_scale_mode.set(next);
+                        #[cfg(target_arch = "wasm32")]
+                        if let Some(h) = handle.get() {
+                            h.set_scale(&mode);
+                        }
+                    }>{move || format!("{} scale", scale_mode.get())}</button>
+                </div>
+                <div class="chart-layout-controls">
+                    <div class="pane-row">
+                        <span class="label">{"Price height"}</span>
+                        <input
+                            r#type="range"
+                            min="0.2"
+                            max="3.0"
+                            step="0.1"
+                            value=move || format!("{:.2}", price_weight.get())
+                            on:input=move |ev| {
+                                let v = event_target_value(&ev).parse::<f64>().unwrap_or(1.0);
+                                set_pane_weight(0, v.clamp(0.2, 5.0));
+                            }
+                        />
+                    </div>
+                    <For
+                        each=move || pane_layout.get()
+                        key=|pane: &PaneConfig| pane.id
+                        children=move |pane: PaneConfig| {
+                            let pid = pane.id;
+                            view! {
+                                <div class="pane-row">
+                                    <span class="label">{pane.title.clone()}</span>
+                                    <input
+                                        r#type="range"
+                                        min="0.2"
+                                        max="3.0"
+                                        step="0.1"
+                                        value=move || format!("{:.2}", pane.weight)
+                                        on:input=move |ev| {
+                                            let v = event_target_value(&ev).parse::<f64>().unwrap_or(1.0);
+                                            set_pane_weight(pid, v.clamp(0.2, 5.0));
+                                        }
+                                    />
+                                    <button class="btn ghost" on:click=move |_| remove_pane(pid)>{"Remove"}</button>
+                                </div>
+                            }
+                        }
+                    />
+                    <div class="pane-row">
+                        <button class="btn ghost" on:click=add_pane aria-label="Add pane">{"+ Pane"}</button>
+                        <div class="pane-route">
+                            <label>{"Indicator output"}</label>
+                            <select
+                                value=move || {
+                                    if indicator_output.get() == OutputKind::SeparatePane {
+                                        "pane".to_string()
+                                    } else {
+                                        "overlay".to_string()
+                                    }
+                                }
+                                on:change=move |ev| {
+                                    let v = event_target_value(&ev);
+                                    if v == "pane" {
+                                        set_indicator_output.set(OutputKind::SeparatePane);
+                                    } else {
+                                        set_indicator_output.set(OutputKind::Overlay);
+                                    }
+                                }
+                            >
+                                <option value="overlay">{"Overlay"}</option>
+                                <option value="pane">{"Separate pane"}</option>
+                            </select>
+                            <select
+                                disabled=move || indicator_output.get() != OutputKind::SeparatePane
+                                value=move || indicator_pane.get().map(|p| p.to_string()).unwrap_or_else(|| "".into())
+                                on:change=move |ev| {
+                                    let v = event_target_value(&ev).parse::<u32>().ok();
+                                    set_indicator_pane.set(v);
+                                }
+                            >
+                                <option value="">{ "Select pane" }</option>
+                                <For
+                                    each=move || pane_layout.get()
+                                    key=|pane: &PaneConfig| pane.id
+                                    children=move |pane: PaneConfig| {
+                                        view! { <option value=move || pane.id.to_string()>{pane.title.clone()}</option> }
+                                    }
+                                />
+                            </select>
+                        </div>
+                    </div>
+                    <div class="chart-inputs">
+                        <For
+                            each=move || input_specs.get()
+                            key=|input: &ChartInput| input.id.clone()
+                            children=move |input: ChartInput| {
+                                let input_id = input.id.clone();
+                                match input.kind {
+                                    InputKind::Slider { min, max, step } => view! {
+                                        <label class="input-row">
+                                            <span>{input.label.clone()}</span>
+                                            <input
+                                                r#type="range"
+                                                min=move || min.to_string()
+                                                max=move || max.to_string()
+                                                step=move || step.to_string()
+                                                value=move || input.value.clone()
+                                                on:input=move |ev| {
+                                                    update_input_value(input_id.clone(), event_target_value(&ev));
+                                                }
+                                            />
+                                        </label>
+                                    },
+                                    InputKind::Toggle => view! {
+                                        <label class="input-row">
+                                            <span>{input.label.clone()}</span>
+                                            <input
+                                                r#type="checkbox"
+                                                checked=move || input.value == "true"
+                                                on:input=move |ev| {
+                                                    let checked = event_target_checked(&ev);
+                                                    update_input_value(input_id.clone(), checked.to_string());
+                                                }
+                                            />
+                                        </label>
+                                    },
+                                    InputKind::Select { options } => view! {
+                                        <label class="input-row">
+                                            <span>{input.label.clone()}</span>
+                                            <select
+                                                value=move || input.value.clone()
+                                                on:change=move |ev| {
+                                                    update_input_value(input_id.clone(), event_target_value(&ev));
+                                                }
+                                            >
+                                                <For
+                                                    each=move || options.clone()
+                                                    key=|opt: &String| opt.clone()
+                                                    children=move |opt: String| {
+                                                        view! { <option value=opt.clone()>{opt}</option> }
+                                                    }
+                                                />
+                                            </select>
+                                        </label>
+                                    },
+                                }
+                            }
+                        />
+                    </div>
+                </div>
             </div>
-            <div class="flex-row" style="gap:6px; margin-top:6px;">
-                <button on:click=add_order>+ Order</button>
-                <button on:click=add_position>+ Position</button>
-            </div>
-            <div class="flex-row" style="gap:8px; margin-top:6px;">
-                <input type="number" step="0.1" value=move || alert_price.get() on:input=move |ev| {
-                    if let Ok(v) = event_target_value(&ev).parse::<f64>() { set_alert_price.set(v); }
-                }/>
-                <button on:click=add_alert>+ Alert</button>
+            <div class="chart-surface">
+                <canvas _ref=_node_ref id=canvas_id class="chart-canvas"></canvas>
             </div>
         </div>
     }

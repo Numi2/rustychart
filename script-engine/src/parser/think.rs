@@ -2,10 +2,8 @@ use regex::Regex;
 use std::collections::HashMap;
 
 use crate::{
-    compat::{
-        CompatibilityIssue, CompatibilityReport, IssueSeverity, TranslationOutput, UnifiedIr,
-    },
-    language::SourceLang,
+    compat::{CompatibilityIssue, CompatibilityReport, TranslationOutput, UnifiedIr},
+    language::{DiagnosticCode, IssueSeverity, SourceLang, SourceSpan},
     manifest::Manifest,
     Expr, PriceField, ScriptSpec, SignalSpec, Source,
 };
@@ -56,19 +54,23 @@ impl ThinkParser {
             .any(|i| i.severity == IssueSeverity::Error)
     }
 
-    fn warn(&mut self, msg: &str, line: Option<usize>) {
+    fn warn(&mut self, code: DiagnosticCode, msg: &str, line: Option<usize>, hint: Option<&str>) {
         self.issues.push(CompatibilityIssue {
+            code,
             message: msg.to_string(),
             severity: IssueSeverity::Warning,
-            location: line.map(|l| (l, 0)),
+            span: line.map(|l| SourceSpan::single_line(l, 0, 0)),
+            hint: hint.map(|h| h.to_string()),
         });
     }
 
-    fn error(&mut self, msg: &str, line: Option<usize>) {
+    fn error(&mut self, code: DiagnosticCode, msg: &str, line: Option<usize>, hint: Option<&str>) {
         self.issues.push(CompatibilityIssue {
+            code,
             message: msg.to_string(),
             severity: IssueSeverity::Error,
-            location: line.map(|l| (l, 0)),
+            span: line.map(|l| SourceSpan::single_line(l, 0, 0)),
+            hint: hint.map(|h| h.to_string()),
         });
     }
 
@@ -108,7 +110,12 @@ impl ThinkParser {
                 if let Some(expr) = self.parse_expr(rhs) {
                     self.env.insert(var, expr);
                 } else {
-                    self.warn("Unsupported def expression", Some(idx + 1));
+                    self.warn(
+                        DiagnosticCode::UnsupportedExpression,
+                        "Unsupported def expression",
+                        Some(idx + 1),
+                        Some("Simplify the expression or use supported functions"),
+                    );
                 }
                 continue;
             }
@@ -118,8 +125,10 @@ impl ThinkParser {
                 let rhs = cap[2].trim();
                 let expr = self.parse_expr(rhs).unwrap_or_else(|| {
                     self.warn(
+                        DiagnosticCode::UnsupportedExpression,
                         "Unsupported plot expression, defaulting to NaN",
                         Some(idx + 1),
+                        Some("Simplify the expression to a supported form"),
                     );
                     Expr::Src(Source::Const(f64::NAN))
                 });
@@ -139,7 +148,12 @@ impl ThinkParser {
                         },
                     );
                 } else {
-                    self.warn("Unsupported alert expression", Some(idx + 1));
+                    self.warn(
+                        DiagnosticCode::UnsupportedExpression,
+                        "Unsupported alert expression",
+                        Some(idx + 1),
+                        Some("Alerts must resolve to true/false (crossover/crossunder)"),
+                    );
                 }
                 continue;
             }
@@ -151,17 +165,29 @@ impl ThinkParser {
                 if let Some(expr) = self.parse_expr(rhs) {
                     self.env.insert(lhs.to_string(), expr);
                 } else {
-                    self.warn("Ignored assignment; unsupported expression", Some(idx + 1));
+                    self.warn(
+                        DiagnosticCode::UnsupportedExpression,
+                        "Ignored assignment; unsupported expression",
+                        Some(idx + 1),
+                        Some("Try Average/ExpAverage/RSI or basic math"),
+                    );
                 }
             } else {
-                self.warn("Ignored line (unsupported construct)", Some(idx + 1));
+                self.warn(
+                    DiagnosticCode::ParseError,
+                    "Ignored line (unsupported construct)",
+                    Some(idx + 1),
+                    Some("Remove unsupported constructs or comment them"),
+                );
             }
         }
 
         if plots.is_empty() && signals.is_empty() {
             self.error(
+                DiagnosticCode::MissingPlotOrSignal,
                 "No plots or signals found; script produces no outputs",
                 None,
+                Some("Add at least one plot or alert"),
             );
         }
 
@@ -202,6 +228,18 @@ impl ThinkParser {
             || trimmed.contains('-')
         {
             return self.parse_binary(trimmed);
+        }
+
+        if trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+        {
+            self.warn(
+                DiagnosticCode::UnknownIdentifier,
+                &format!("Unknown identifier `{trimmed}`"),
+                None,
+                Some("Define it via `def` or `input` before use"),
+            );
         }
 
         None
@@ -273,7 +311,12 @@ impl ThinkParser {
                 }
             }
             _ => {
-                self.warn(&format!("Unsupported function call: {func}"), None);
+                self.warn(
+                    DiagnosticCode::UnsupportedFunction,
+                    &format!("Unsupported function call: {func}"),
+                    None,
+                    Some("Supported: Average/ExpAverage/RSI, crossover/crossunder"),
+                );
                 None
             }
         }

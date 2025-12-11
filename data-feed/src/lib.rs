@@ -108,3 +108,115 @@ pub trait DataSource {
         from: Option<Timestamp>,
     ) -> DataStream<Self::Error>;
 }
+
+/// Alpha Vantage-backed data source that performs historical fetches and optional polling.
+#[cfg(feature = "alpha")]
+pub mod alpha {
+    use alpha_vantage_client::{
+        timeframe_to_alpha_interval, AlphaVantageClient, AlphaVantageError, OutputSize,
+    };
+    use async_stream::try_stream;
+    use tokio::time::sleep;
+
+    use super::{DataEvent, DataSource, DataStream};
+    use std::time::Duration;
+    use ts_core::{Candle, TimeFrame, Timestamp};
+
+    #[derive(Clone)]
+    pub struct AlphaVantageSource {
+        client: AlphaVantageClient,
+        poll_interval: Duration,
+        outputsize: OutputSize,
+        poll_after_first: bool,
+    }
+
+    impl AlphaVantageSource {
+        pub fn new(client: AlphaVantageClient) -> Self {
+            Self {
+                client,
+                poll_interval: Duration::from_secs(60),
+                outputsize: OutputSize::Compact,
+                poll_after_first: true,
+            }
+        }
+
+        pub fn with_poll_interval(mut self, interval: Duration) -> Self {
+            self.poll_interval = interval;
+            self
+        }
+
+        pub fn with_outputsize(mut self, outputsize: OutputSize) -> Self {
+            self.outputsize = outputsize;
+            self
+        }
+
+        pub fn disable_polling(mut self) -> Self {
+            self.poll_after_first = false;
+            self
+        }
+    }
+
+    impl DataSource for AlphaVantageSource {
+        type Error = AlphaVantageError;
+
+        fn subscribe(
+            &self,
+            symbol: &str,
+            base_timeframe: TimeFrame,
+            from: Option<Timestamp>,
+        ) -> DataStream<Self::Error> {
+            let client = self.client.clone();
+            let symbol = symbol.to_string();
+            let poll_interval = self.poll_interval;
+            let outputsize = self.outputsize;
+            let poll_after_first = self.poll_after_first;
+
+            Box::pin(try_stream! {
+                let mut last_seen = from.unwrap_or(i64::MIN);
+                let mut first_cycle = true;
+
+                loop {
+                    let candles: Vec<Candle> = match base_timeframe {
+                        TimeFrame::Days(1) => client
+                            .get_time_series_daily_adjusted(&symbol, outputsize)
+                            .await?,
+                        TimeFrame::Minutes(_) | TimeFrame::Hours(1) => {
+                            let interval = timeframe_to_alpha_interval(base_timeframe)
+                                .ok_or(AlphaVantageError::UnsupportedTimeFrame(base_timeframe))?;
+                            client
+                                .get_time_series_intraday(&symbol, interval, outputsize)
+                                .await?
+                        }
+                        _ => {
+                            Err(AlphaVantageError::UnsupportedTimeFrame(base_timeframe))?
+                        }
+                    };
+
+                    let mut filtered: Vec<Candle> = candles
+                        .into_iter()
+                        .filter(|c| c.ts > last_seen)
+                        .collect();
+                    filtered.sort_by_key(|c| c.ts);
+
+                    if let Some(max_ts) = filtered.last().map(|c| c.ts) {
+                        last_seen = max_ts;
+                    }
+
+                    if !filtered.is_empty() {
+                        yield DataEvent::HistoryBatch {
+                            timeframe: base_timeframe,
+                            candles: filtered,
+                            prepend: false,
+                        };
+                    }
+
+                    if !poll_after_first && !first_cycle {
+                        break;
+                    }
+                    first_cycle = false;
+                    sleep(poll_interval).await;
+                }
+            })
+        }
+    }
+}

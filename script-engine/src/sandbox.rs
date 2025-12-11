@@ -19,6 +19,16 @@ impl Default for SandboxLimits {
     }
 }
 
+impl SandboxLimits {
+    /// Construct limits with explicit caps for host-controlled sandboxes.
+    pub fn constrained(max_fuel: u64, max_heap_bytes: u64) -> Self {
+        Self {
+            max_fuel,
+            max_heap_bytes,
+        }
+    }
+}
+
 /// Host callbacks exposed to sandboxed scripts; this is intentionally thin and deterministic.
 pub trait HostEnvironment {
     fn now_ms(&self) -> i64;

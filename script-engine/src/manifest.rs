@@ -79,7 +79,7 @@ impl Manifest {
             })
             .collect();
 
-        let outputs = spec
+        let mut outputs: Vec<OutputSpec> = spec
             .plots
             .keys()
             .map(|name| OutputSpec {
@@ -88,6 +88,12 @@ impl Manifest {
                 description: None,
             })
             .collect();
+
+        outputs.extend(spec.signals.keys().map(|name| OutputSpec {
+            name: name.clone(),
+            kind: OutputKind::Signal,
+            description: None,
+        }));
 
         let capabilities = ManifestCapabilities {
             pine_compatible: matches!(source_lang, SourceLang::PineV5),

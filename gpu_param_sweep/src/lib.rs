@@ -199,52 +199,50 @@ impl GpuBacktester {
             mapped_at_creation: false,
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("param-sweep-bgl"),
-                entries: &[
-                    // OHLC storage buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("param-sweep-bgl"),
+            entries: &[
+                // OHLC storage buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // ParamGrid uniform
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // ParamGrid uniform
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    // Results storage buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                // Results storage buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("param-sweep-pipeline-layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("param-sweep-pipeline-layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("param-sweep-pipeline"),
@@ -297,7 +295,8 @@ impl GpuBacktester {
             checked_product(&[ema_count, band_count, stop_count, target_count, risk_count])?;
 
         let ohlc_size = aligned_size(ohlc.len(), std::mem::size_of::<Ohlc>() as u64);
-        let result_size = aligned_size(num_combos as usize, std::mem::size_of::<GpuResult>() as u64);
+        let result_size =
+            aligned_size(num_combos as usize, std::mem::size_of::<GpuResult>() as u64);
 
         let uniform = ParamGridUniform {
             ema_min: grid_cfg.ema.min,
@@ -337,14 +336,17 @@ impl GpuBacktester {
         // Upload data
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
-        self.queue
-            .write_buffer(self.ohlc_buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(ohlc));
+        self.queue.write_buffer(
+            self.ohlc_buffer.as_ref().unwrap(),
+            0,
+            bytemuck::cast_slice(ohlc),
+        );
 
-        let mut encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("param-sweep-encoder"),
-                });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("param-sweep-encoder"),
+            });
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -376,7 +378,8 @@ impl GpuBacktester {
         slice.map_async(wgpu::MapMode::Read, move |res| {
             let _ = tx.send(res.map_err(|e| anyhow!("map_async failed: {e:?}")));
         });
-        rx.await.unwrap_or_else(|_| Err(anyhow!("map_async receiver dropped")))?;
+        rx.await
+            .unwrap_or_else(|_| Err(anyhow!("map_async receiver dropped")))?;
 
         let data = slice.get_mapped_range();
         let gpu_results: &[GpuResult] = bytemuck::cast_slice(&data);
@@ -520,8 +523,7 @@ fn indices_to_params(indices: Indices, grid: &GridConfig) -> SampledParams {
         ema_len: grid.ema.min + grid.ema.step * indices.ema_idx as f32,
         band_width: grid.band.min + grid.band.step * indices.band_idx as f32,
         atr_stop_mult: grid.atr_stop.min + grid.atr_stop.step * indices.stop_idx as f32,
-        atr_target_mult: grid.atr_target.min
-            + grid.atr_target.step * indices.target_idx as f32,
+        atr_target_mult: grid.atr_target.min + grid.atr_target.step * indices.target_idx as f32,
         risk_per_trade: grid.risk.min + grid.risk.step * indices.risk_idx as f32,
     }
 }
@@ -691,7 +693,10 @@ impl ExperimentRunner {
             });
         }
 
-        Ok(ExperimentResult { spec, window_results })
+        Ok(ExperimentResult {
+            spec,
+            window_results,
+        })
     }
 }
 
@@ -773,7 +778,12 @@ pub fn compute_neighbor_robustness(
                 for &d_stop in &[-1_i32, 0, 1] {
                     for &d_target in &[-1_i32, 0, 1] {
                         for &d_risk in &[-1_i32, 0, 1] {
-                            if d_ema == 0 && d_band == 0 && d_stop == 0 && d_target == 0 && d_risk == 0 {
+                            if d_ema == 0
+                                && d_band == 0
+                                && d_stop == 0
+                                && d_target == 0
+                                && d_risk == 0
+                            {
                                 continue;
                             }
 
@@ -898,16 +908,8 @@ pub fn bootstrap_trade_distribution(
         dd_distribution.push(worst_dd);
     }
 
-    let prob_dd_30 = dd_distribution
-        .iter()
-        .filter(|&&dd| dd >= 0.30)
-        .count() as f32
-        / paths as f32;
-    let prob_dd_50 = dd_distribution
-        .iter()
-        .filter(|&&dd| dd >= 0.50)
-        .count() as f32
-        / paths as f32;
+    let prob_dd_30 = dd_distribution.iter().filter(|&&dd| dd >= 0.30).count() as f32 / paths as f32;
+    let prob_dd_50 = dd_distribution.iter().filter(|&&dd| dd >= 0.50).count() as f32 / paths as f32;
 
     BootstrapResult {
         pnl_distribution,
@@ -925,7 +927,9 @@ pub struct GeneralizationStats {
     pub generalization_score: f32,
 }
 
-pub fn compute_generalization(metrics_per_market: &[Vec<BacktestMetrics>]) -> Vec<GeneralizationStats> {
+pub fn compute_generalization(
+    metrics_per_market: &[Vec<BacktestMetrics>],
+) -> Vec<GeneralizationStats> {
     if metrics_per_market.is_empty() {
         return Vec::new();
     }
@@ -1048,7 +1052,7 @@ pub fn load_experiment_result(path: impl AsRef<Path>) -> Result<ExperimentResult
 }
 
 #[cfg(all(target_arch = "wasm32", feature = "wasm-bench"))]
-    pub async fn wasm_perf_harness() -> Result<()> {
+pub async fn wasm_perf_harness() -> Result<()> {
     fn log(msg: &str) {
         web_sys::console::log_1(&msg.into());
     }
@@ -1056,18 +1060,58 @@ pub fn load_experiment_result(path: impl AsRef<Path>) -> Result<ExperimentResult
     let ohlc = GpuBacktester::generate_dummy_ohlc(2_000);
     let grids = [
         GridConfig {
-            ema: ParamRange { min: 10.0, max: 50.0, step: 5.0 },
-            band: ParamRange { min: 1.0, max: 3.0, step: 0.5 },
-            atr_stop: ParamRange { min: 1.0, max: 3.0, step: 0.5 },
-            atr_target: ParamRange { min: 1.0, max: 5.0, step: 1.0 },
-            risk: ParamRange { min: 0.0025, max: 0.01, step: 0.0025 },
+            ema: ParamRange {
+                min: 10.0,
+                max: 50.0,
+                step: 5.0,
+            },
+            band: ParamRange {
+                min: 1.0,
+                max: 3.0,
+                step: 0.5,
+            },
+            atr_stop: ParamRange {
+                min: 1.0,
+                max: 3.0,
+                step: 0.5,
+            },
+            atr_target: ParamRange {
+                min: 1.0,
+                max: 5.0,
+                step: 1.0,
+            },
+            risk: ParamRange {
+                min: 0.0025,
+                max: 0.01,
+                step: 0.0025,
+            },
         },
         GridConfig {
-            ema: ParamRange { min: 5.0, max: 30.0, step: 5.0 },
-            band: ParamRange { min: 0.5, max: 2.5, step: 0.5 },
-            atr_stop: ParamRange { min: 0.5, max: 2.0, step: 0.5 },
-            atr_target: ParamRange { min: 0.5, max: 3.0, step: 0.5 },
-            risk: ParamRange { min: 0.001, max: 0.01, step: 0.001 },
+            ema: ParamRange {
+                min: 5.0,
+                max: 30.0,
+                step: 5.0,
+            },
+            band: ParamRange {
+                min: 0.5,
+                max: 2.5,
+                step: 0.5,
+            },
+            atr_stop: ParamRange {
+                min: 0.5,
+                max: 2.0,
+                step: 0.5,
+            },
+            atr_target: ParamRange {
+                min: 0.5,
+                max: 3.0,
+                step: 0.5,
+            },
+            risk: ParamRange {
+                min: 0.001,
+                max: 0.01,
+                step: 0.001,
+            },
         },
     ];
 

@@ -601,7 +601,12 @@ mod tests {
     #[test]
     fn downsample_preserves_extremes() {
         let series: Vec<Candle> = (0..100)
-            .map(|i| mk_candle(i * MINUTE_MS, (i as f64, i as f64 + 2.0, i as f64 - 2.0, i as f64)))
+            .map(|i| {
+                mk_candle(
+                    i * MINUTE_MS,
+                    (i as f64, i as f64 + 2.0, i as f64 - 2.0, i as f64),
+                )
+            })
             .collect();
         let ds = downsample_slice(TimeFrame::Minutes(1), &series, 10);
         assert!(ds.len() <= 10);
@@ -631,8 +636,8 @@ mod tests {
         let mut store = SeriesStore::new(TimeFrame::Minutes(1));
         store.set_session_calendar(SessionCalendar {
             sessions: vec![Session {
-                start_minute: 60,  // 01:00
-                end_minute: 120,   // 02:00
+                start_minute: 60, // 01:00
+                end_minute: 120,  // 02:00
             }],
             holidays: vec![],
         });

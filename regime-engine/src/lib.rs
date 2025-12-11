@@ -50,11 +50,8 @@ pub fn extract_features(window: &[Candle]) -> Result<FeatureVector, RegimeError>
     returns.remove(0); // first ret was synthetic
 
     let mean_ret = returns.iter().sum::<f64>() / returns.len() as f64;
-    let var = returns
-        .iter()
-        .map(|r| (r - mean_ret).powi(2))
-        .sum::<f64>()
-        / returns.len().max(1) as f64;
+    let var =
+        returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>() / returns.len().max(1) as f64;
     let realized_vol = var.sqrt();
 
     let mut atr_sum = 0.0;
@@ -137,13 +134,16 @@ impl RegimeClusterer {
             }
 
             // recompute centroids
-            let mut sums = vec![FeatureVector {
-                realized_vol: 0.0,
-                atr: 0.0,
-                trend_slope: 0.0,
-                gap_rate: 0.0,
-                range_ratio: 0.0,
-            }; self.centroids.len()];
+            let mut sums = vec![
+                FeatureVector {
+                    realized_vol: 0.0,
+                    atr: 0.0,
+                    trend_slope: 0.0,
+                    gap_rate: 0.0,
+                    range_ratio: 0.0,
+                };
+                self.centroids.len()
+            ];
             let mut counts = vec![0usize; self.centroids.len()];
             for (fv, &label) in data.iter().zip(labels.iter()) {
                 let acc = &mut sums[label];
